@@ -25,10 +25,30 @@
           "description": "Modify the casing of the signal name"
         }
       ],
+      "datastar-ignore-modifiers": [
+        {
+          "name": "self",
+          "description": "Only ignore the element itself, not its descendants"
+        }
+      ],
       "datastar-indicator-modifiers": [
         {
           "name": "case",
           "description": "Modify the casing of the signal name"
+        }
+      ],
+      "datastar-init-modifiers": [
+        {
+          "name": "delay",
+          "description": "Delay the event listener"
+        },
+        {
+          "name": "delay.1s",
+          "description": "Delay for 1 second"
+        },
+        {
+          "name": "viewtransition",
+          "description": "Wraps the expression in `document.startViewTransition()`"
         }
       ],
       "datastar-json-signals-modifiers": [
@@ -63,7 +83,7 @@
           "description": "Debounce with leading edge"
         },
         {
-          "name": "debounce.notrail",
+          "name": "debounce.notrailing",
           "description": "Debounce without trailing edge"
         },
         {
@@ -95,7 +115,7 @@
           "description": "Throttle without leading edge"
         },
         {
-          "name": "throttle.trail",
+          "name": "throttle.trailing",
           "description": "Throttle without trailing edge"
         },
         {
@@ -139,20 +159,6 @@
           "description": "Wraps the expression in `document.startViewTransition()`"
         }
       ],
-      "datastar-on-load-modifiers": [
-        {
-          "name": "delay",
-          "description": "Delay the event listener"
-        },
-        {
-          "name": "delay.1s",
-          "description": "Delay for 1 second"
-        },
-        {
-          "name": "viewtransition",
-          "description": "Wraps the expression in `document.startViewTransition()`"
-        }
-      ],
       "datastar-on-timing-modifiers": [
         {
           "name": "debounce",
@@ -171,7 +177,7 @@
           "description": "Debounce with leading edge"
         },
         {
-          "name": "debounce.notrail",
+          "name": "debounce.notrailing",
           "description": "Debounce without trailing edge"
         },
         {
@@ -191,7 +197,7 @@
           "description": "Throttle without leading edge"
         },
         {
-          "name": "throttle.trail",
+          "name": "throttle.trailing",
           "description": "Throttle without trailing edge"
         }
       ],
@@ -281,7 +287,7 @@
     "html": {
       "attributes": [
         {
-          "name": "data-attr-*",
+          "name": "data-attr:*",
           "virtual": true,
           "description": "Sets an element’s attribute value based on an expression.",
           "doc-url": "https://data-star.dev/reference/attributes#data-attr",
@@ -303,7 +309,7 @@
                   }
                 ],
                 "template": [
-                  "data-attr-",
+                  "data-attr:",
                   "$...",
                   "#item:event name"
                 ],
@@ -319,7 +325,7 @@
           }
         },
         {
-          "name": "data-class-*",
+          "name": "data-class:*",
           "virtual": true,
           "description": "Adds or removes classes from an element based on an expression.",
           "doc-url": "https://data-star.dev/reference/attributes#data-class",
@@ -335,14 +341,14 @@
             "or": [
               {
                 "template": [
-                  "data-class-",
+                  "data-class:",
                   {
                     "regex": "[-a-z0-9]+"
                   },
                   {
                     "items": "/js/datastar-class-modifiers",
                     "template": [
-                      "data-class-",
+                      "data-class:",
                       "$...",
                       "#item:event name"
                     ],
@@ -360,33 +366,56 @@
           }
         },
         {
-          "name": "data-computed-*",
+          "name": "data-computed:*",
           "virtual": true,
           "description": "Creates a signal that is computed based on an expression.",
           "doc-url": "https://data-star.dev/reference/attributes#data-computed",
           "value": {
             "kind": "expression",
-            "type": "string",
+            "type": [
+              "string",
+              "object"
+            ],
             "required": true
           },
           "pattern": {
-            "template": [
-              "data-computed-",
+            "or": [
               {
-                "regex": "[-a-z0-9]+"
+                "template": [
+                  "data-computed:",
+                  {
+                    "regex": "[-a-z0-9]+"
+                  },
+                  {
+                    "items": "/js/datastar-computed-modifiers",
+                    "template": [
+                      "__",
+                      "$...",
+                      "#item:modifier"
+                    ],
+                    "required": false,
+                    "repeat": true
+                  }
+                ],
+                "priority": "normal"
               },
               {
-                "items": "/js/datastar-computed-modifiers",
                 "template": [
-                  "__",
-                  "$...",
-                  "#item:modifier"
+                  "data-computed",
+                  {
+                    "items": "/js/datastar-computed-modifiers",
+                    "template": [
+                      "__",
+                      "$...",
+                      "#item:modifier"
+                    ],
+                    "required": false,
+                    "repeat": true
+                  }
                 ],
-                "required": false,
-                "repeat": true
+                "priority": "normal"
               }
-            ],
-            "priority": "normal"
+            ]
           }
         },
         {
@@ -435,7 +464,17 @@
           },
           "pattern": {
             "template": [
-              "data-ignore"
+              "data-ignore",
+              {
+                "items": "/js/datastar-ignore-modifiers",
+                "template": [
+                  "__",
+                  "$...",
+                  "#item:modifier"
+                ],
+                "required": false,
+                "repeat": true
+              }
             ],
             "priority": "normal"
           }
@@ -458,7 +497,7 @@
           }
         },
         {
-          "name": "data-indicator-*",
+          "name": "data-indicator:*",
           "virtual": true,
           "description": "Creates a signal to track in-flight backend requests.",
           "doc-url": "https://data-star.dev/reference/attributes#data-indicator",
@@ -471,7 +510,7 @@
             "or": [
               {
                 "template": [
-                  "data-indicator-",
+                  "data-indicator:",
                   {
                     "regex": "[-a-z0-9]+"
                   },
@@ -495,6 +534,33 @@
                 "priority": "normal"
               }
             ]
+          }
+        },
+        {
+          "name": "data-init",
+          "virtual": true,
+          "description": "Runs an expression whenever the element is initialised.",
+          "doc-url": "https://data-star.dev/reference/attributes#data-init",
+          "value": {
+            "kind": "expression",
+            "type": "string",
+            "required": true
+          },
+          "pattern": {
+            "template": [
+              "data-init",
+              {
+                "items": "/js/datastar-init-modifiers",
+                "template": [
+                  "__",
+                  "$...",
+                  "#item:modifier"
+                ],
+                "required": false,
+                "repeat": true
+              }
+            ],
+            "priority": "normal"
           }
         },
         {
@@ -525,7 +591,7 @@
           }
         },
         {
-          "name": "data-on-*",
+          "name": "data-on:*",
           "virtual": true,
           "description": "Runs an expression whenever an event is triggered on an element.",
           "doc-url": "https://data-star.dev/reference/attributes#data-on",
@@ -539,7 +605,7 @@
               {
                 "items": "/js/events",
                 "template": [
-                  "data-on-",
+                  "data-on:",
                   "$...",
                   "#item:event name",
                   {
@@ -600,33 +666,6 @@
               "data-on-interval",
               {
                 "items": "/js/datastar-on-interval-modifiers",
-                "template": [
-                  "__",
-                  "$...",
-                  "#item:modifier"
-                ],
-                "required": false,
-                "repeat": true
-              }
-            ],
-            "priority": "normal"
-          }
-        },
-        {
-          "name": "data-on-load",
-          "virtual": true,
-          "description": "Runs an expression whenever the element is initialised.",
-          "doc-url": "https://data-star.dev/reference/attributes#data-on-load",
-          "value": {
-            "kind": "expression",
-            "type": "string",
-            "required": true
-          },
-          "pattern": {
-            "template": [
-              "data-on-load",
-              {
-                "items": "/js/datastar-on-load-modifiers",
                 "template": [
                   "__",
                   "$...",
@@ -738,7 +777,7 @@
           }
         },
         {
-          "name": "data-persist-*",
+          "name": "data-persist:*",
           "virtual": true,
           "description": "Persists all signals in local storage.",
           "doc-url": "https://data-star.dev/reference/attributes#data-persist",
@@ -751,7 +790,7 @@
             "or": [
               {
                 "template": [
-                  "data-persist-",
+                  "data-persist:",
                   {
                     "regex": "[-a-z0-9]+"
                   }
@@ -822,7 +861,7 @@
           }
         },
         {
-          "name": "data-ref-*",
+          "name": "data-ref:*",
           "virtual": true,
           "description": "Creates a signal whose value references an element.",
           "doc-url": "https://data-star.dev/reference/attributes#data-ref",
@@ -835,7 +874,7 @@
             "or": [
               {
                 "template": [
-                  "data-ref-",
+                  "data-ref:",
                   {
                     "regex": "[-a-z0-9]+"
                   },
@@ -923,7 +962,7 @@
           }
         },
         {
-          "name": "data-signals-*",
+          "name": "data-signals:*",
           "virtual": true,
           "description": "Merges a signal into the existing signals.",
           "doc-url": "https://data-star.dev/reference/attributes#data-signals",
@@ -939,7 +978,7 @@
             "or": [
               {
                 "template": [
-                  "data-signals-",
+                  "data-signals:",
                   {
                     "regex": "[-a-z0-9]+"
                   },
@@ -976,7 +1015,7 @@
           }
         },
         {
-          "name": "data-style-*",
+          "name": "data-style:*",
           "virtual": true,
           "description": "Adds or removes inline CSS styles from an element based on an expression.",
           "doc-url": "https://data-star.dev/reference/attributes#data-style",
@@ -992,7 +1031,7 @@
             "or": [
               {
                 "template": [
-                  "data-style-",
+                  "data-style:",
                   {
                     "regex": "[-a-z0-9]+"
                   }
@@ -1059,7 +1098,7 @@
           },
           "attributes": [
             {
-              "name": "data-bind-*",
+              "name": "data-bind:*",
               "virtual": true,
               "description": "Creates a new signal and enables two-way binding between it and the element.",
               "doc-url": "https://data-star.dev/reference/attributes#data-bind",
@@ -1072,7 +1111,7 @@
                 "or": [
                   {
                     "template": [
-                      "data-bind-",
+                      "data-bind:",
                       {
                         "regex": "[-a-z0-9]+"
                       },
