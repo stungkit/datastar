@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.2.1] - 2025-10-22
+
+- Fixed icon.
+
 ## [1.2.0] - 2025-10-22
 
 - Added support for using object syntax with `data-computed`.
@@ -64,7 +68,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.0.2...v1.1.0
