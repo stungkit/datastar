@@ -1,4 +1,4 @@
-Before contributing, please read the [contribution guidelines](https://github.com/starfederation/datastar/blob/develop/CONTRIBUTING.md). Any change in behavior must be accompanied by appropriate justification, clearly describing the problem, solution, and alternatives considered.
+I confirm that I have read the [contribution guidelines](https://github.com/starfederation/datastar/blob/develop/CONTRIBUTING.md) and will include a clear explanation of the problem, solution, and alternatives for any proposed change in behavior.
 
 ## Problem Statement
 
