@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.2.3] - 2025-11-08
+
+- Made it so that the `data-bind` attribute appears on all elements, rather than only a few select ones (`input`, `select`, etc.).
+
+## [1.2.2] - 2025-10-22
+
+- Fixed icon.
+
 ## [1.2.1] - 2025-10-22
 
 - Fixed icon.
@@ -68,7 +76,9 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.2.2...v1.2.3
+[1.2.2]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.1.0...v1.1.1

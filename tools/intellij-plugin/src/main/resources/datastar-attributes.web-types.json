@@ -325,6 +325,47 @@
           }
         },
         {
+          "name": "data-bind:*",
+          "virtual": true,
+          "description": "Creates a new signal and enables two-way binding between it and the element.",
+          "doc-url": "https://data-star.dev/reference/attributes#data-bind",
+          "value": {
+            "kind": "expression",
+            "type": "string",
+            "required": true
+          },
+          "pattern": {
+            "or": [
+              {
+                "template": [
+                  "data-bind:",
+                  {
+                    "regex": "[-a-z0-9]+"
+                  },
+                  {
+                    "items": "/js/datastar-bind-modifiers",
+                    "template": [
+                      "__",
+                      "$...",
+                      "#item:modifier"
+                    ],
+                    "required": false,
+                    "repeat": true
+                  }
+                ],
+                "priority": "normal",
+                "required": false
+              },
+              {
+                "template": [
+                  "data-bind"
+                ],
+                "priority": "normal"
+              }
+            ]
+          }
+        },
+        {
           "name": "data-class:*",
           "virtual": true,
           "description": "Adds or removes classes from an element based on an expression.",
@@ -1080,65 +1121,6 @@
             ],
             "priority": "normal"
           }
-        }
-      ],
-      "elements": [
-        {
-          "name": "Standard HTML elements extension",
-          "description": "This is a workaround to provide /js/properties on standard HTML elements.",
-          "extension": true,
-          "pattern": {
-            "or": [
-              "input",
-              "textarea",
-              "select",
-              "checkbox",
-              "radio"
-            ]
-          },
-          "attributes": [
-            {
-              "name": "data-bind:*",
-              "virtual": true,
-              "description": "Creates a new signal and enables two-way binding between it and the element.",
-              "doc-url": "https://data-star.dev/reference/attributes#data-bind",
-              "value": {
-                "kind": "expression",
-                "type": "string",
-                "required": true
-              },
-              "pattern": {
-                "or": [
-                  {
-                    "template": [
-                      "data-bind:",
-                      {
-                        "regex": "[-a-z0-9]+"
-                      },
-                      {
-                        "items": "/js/datastar-bind-modifiers",
-                        "template": [
-                          "__",
-                          "$...",
-                          "#item:modifier"
-                        ],
-                        "required": false,
-                        "repeat": true
-                      }
-                    ],
-                    "priority": "normal",
-                    "required": false
-                  },
-                  {
-                    "template": [
-                      "data-bind"
-                    ],
-                    "priority": "normal"
-                  }
-                ]
-              }
-            }
-          ]
         }
       ]
     }
