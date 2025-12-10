@@ -153,7 +153,7 @@
     ]
   },
   "devDependencies": {
-    "@vscode/vsce": "^2.19.0"
+    "@vscode/vsce": "^3.7.0"
   },
   "scripts": {
     "build": "npm exec vsce package",
