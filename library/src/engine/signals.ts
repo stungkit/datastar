@@ -620,8 +620,25 @@ const deep = (value: any, prefix = ''): any => {
             deepObj[prop] = newValue
             dispatch(path, '')
             // if prop changed after setting it then dispatch
-          } else if (deepObj[prop](deep(newValue, `${path}.`))) {
-            dispatch(path, newValue)
+          } else {
+            const currentValue = deepObj[prop]()
+            const pathStr = `${path}.`
+            if (isPojo(currentValue) && isPojo(newValue)) {
+              for (const key in currentValue) {
+                if (!hasOwn(newValue, key)) {
+                  delete currentValue[key]
+                  dispatch(pathStr + key, null)
+                }
+              }
+              for (const key in newValue) {
+                const nextVal = newValue[key]
+                if (currentValue[key] !== nextVal) {
+                  currentValue[key] = nextVal
+                }
+              }
+            } else if (deepObj[prop](deep(newValue, pathStr))) {
+              dispatch(path, newValue)
+            }
           }
           // if newValue is null or undefined then noop
         } else if (newValue != null) {

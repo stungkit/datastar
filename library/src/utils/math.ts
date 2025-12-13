@@ -23,3 +23,17 @@ export const inverseLerp = (
   const v = (value - min) / (max - min)
   return clamped ? clamp(v, min, max) : v
 }
+
+export const fit = (
+  value: number,
+  inMin: number,
+  inMax: number,
+  outMin: number,
+  outMax: number,
+  clamped = true,
+  rounded = false,
+): number => {
+  const t = inverseLerp(inMin, inMax, value, clamped)
+  const fitted = lerp(outMin, outMax, t, clamped)
+  return rounded ? Math.round(fitted) : fitted
+}

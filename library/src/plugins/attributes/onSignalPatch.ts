@@ -7,7 +7,7 @@ import { DATASTAR_SIGNAL_PATCH_EVENT } from '@engine/consts'
 import { beginBatch, endBatch, filtered } from '@engine/signals'
 import type { JSONPatch, SignalFilterOptions } from '@engine/types'
 import { isEmpty } from '@utils/paths'
-import { jsStrToObject } from '@utils/text'
+import { aliasify, jsStrToObject } from '@utils/text'
 import { modifyTiming } from '@utils/timing'
 
 attribute({
@@ -22,20 +22,28 @@ attribute({
       throw error('KeyNotAllowed')
     }
 
-    // Look for data-on-signal-patch-filter data attribute
-    const filtersRaw = el.getAttribute('data-on-signal-patch-filter')
+    const filterAttr = aliasify(`${this.name}-filter`)
+    const filtersRaw = el.getAttribute(filterAttr)
     let filters: SignalFilterOptions = {}
     if (filtersRaw) {
       filters = jsStrToObject(filtersRaw)
     }
 
+    let running = false
+
     const callback: EventListener = modifyTiming(
       (evt: CustomEvent<JSONPatch>) => {
+        if (running) return
         const watched = filtered(filters, evt.detail)
         if (!isEmpty(watched)) {
+          running = true
           beginBatch()
-          rx(watched)
-          endBatch()
+          try {
+            rx(watched)
+          } finally {
+            endBatch()
+            running = false
+          }
         }
       },
       mods,

@@ -4,7 +4,7 @@
 
 import { action } from '@engine'
 import { DATASTAR_FETCH_EVENT } from '@engine/consts'
-import { filtered } from '@engine/signals'
+import { filtered, startPeeking, stopPeeking } from '@engine/signals'
 import type {
   DatastarFetchEvent,
   HTMLOrSVG,
@@ -12,226 +12,206 @@ import type {
 } from '@engine/types'
 import { kebab } from '@utils/text'
 
-const fetchAbortControllers = new WeakMap<HTMLOrSVG, AbortController>()
-
-const createHttpMethod = (name: string, method: string): void =>
+const createHttpMethod = (
+  name: string,
+  method: string,
+  openWhenHiddenDefault: boolean = true,
+): void =>
   action({
     name,
     apply: async (
-      { el, evt, error },
+      { el, evt, error, cleanups },
       url: string,
       {
         selector,
         headers: userHeaders,
         contentType = 'json',
         filterSignals: { include = /.*/, exclude = /(^|\.)_/ } = {},
-        openWhenHidden = false,
-        retryInterval = 1000,
+        openWhenHidden = openWhenHiddenDefault,
+        payload,
+        requestCancellation = 'auto',
+        retry = 'auto',
+        retryInterval = 1_000,
         retryScaler = 2,
         retryMaxWaitMs = 30_000,
         retryMaxCount = 10,
-        requestCancellation = 'auto',
       }: FetchArgs = {},
     ) => {
       const controller =
         requestCancellation instanceof AbortController
           ? requestCancellation
           : new AbortController()
-      const isDisabled = requestCancellation === 'disabled'
-      if (!isDisabled) {
-        const oldController = fetchAbortControllers.get(el)
-        if (oldController) {
-          oldController.abort()
+      if (requestCancellation === 'auto') {
+        cleanups.get(`@${name}`)?.()
+        cleanups.set(`@${name}`, async () => {
+          controller.abort()
           // wait one tick for FINISHED to fire
           await Promise.resolve()
-        }
+        })
       }
 
-      if (!isDisabled && !(requestCancellation instanceof AbortController)) {
-        fetchAbortControllers.set(el, controller)
-      }
+      let cleanupFn = null
 
       try {
-        const observer = new MutationObserver((mutations) => {
-          for (const mutation of mutations) {
-            for (const removed of mutation.removedNodes) {
-              if (removed === el) {
-                controller.abort()
-                cleanupFn()
-              }
-            }
-          }
-        })
-        if (el.parentNode) {
-          observer.observe(el.parentNode, { childList: true })
+        if (!url?.length) {
+          throw error('FetchNoUrlProvided', { action })
         }
 
-        let cleanupFn = () => {
-          observer.disconnect()
+        const initialHeaders: Record<string, any> = {
+          Accept: 'text/event-stream, text/html, application/json',
+          'Datastar-Request': true,
         }
+        if (contentType === 'json') {
+          initialHeaders['Content-Type'] = 'application/json'
+        }
+        const headers = Object.assign({}, initialHeaders, userHeaders)
+
+        // We ignore the content-type header if using form data
+        // if missing the boundary will be set automatically
+
+        const req: FetchEventSourceInit = {
+          method,
+          headers,
+          openWhenHidden,
+          retry,
+          retryInterval,
+          retryScaler,
+          retryMaxWaitMs,
+          retryMaxCount,
+          signal: controller.signal,
+          onopen: async (response: Response) => {
+            if (response.status >= 400)
+              dispatchFetch(ERROR, el, { status: response.status.toString() })
+          },
+          onmessage: (evt) => {
+            if (!evt.event.startsWith('datastar')) return
+            const type = evt.event
+            const argsRawLines: Record<string, string[]> = {}
+
+            for (const line of evt.data.split('\n')) {
+              const i = line.indexOf(' ')
+              const k = line.slice(0, i)
+              const v = line.slice(i + 1)
+              ;(argsRawLines[k] ||= []).push(v)
+            }
+
+            const argsRaw = Object.fromEntries(
+              Object.entries(argsRawLines).map(([k, v]) => [k, v.join('\n')]),
+            )
+
+            dispatchFetch(type, el, argsRaw)
+          },
+          onerror: (error) => {
+            if (isWrongContent(error)) {
+              // don't retry if the content-type is wrong
+              throw error('FetchExpectedTextEventStream', { url })
+            }
+            // do nothing and it will retry
+            if (error) {
+              console.error(error.message)
+              dispatchFetch(RETRYING, el, { message: error.message })
+            }
+          },
+        }
+
+        const urlInstance = new URL(url, document.baseURI)
+        const queryParams = new URLSearchParams(urlInstance.search)
+
+        if (contentType === 'json') {
+          startPeeking()
+          payload =
+            payload !== undefined ? payload : filtered({ include, exclude })
+          stopPeeking()
+          const body = JSON.stringify(payload)
+          if (method === 'GET') {
+            queryParams.set('datastar', body)
+          } else {
+            req.body = body
+          }
+        } else if (contentType === 'form') {
+          const formEl = (
+            selector ? document.querySelector(selector) : el.closest('form')
+          ) as HTMLFormElement
+          if (!formEl) {
+            throw error('FetchFormNotFound', { action, selector })
+          }
+
+          // Validate the form
+          if (!formEl.noValidate && !formEl.checkValidity()) {
+            formEl.reportValidity()
+            return
+          }
+
+          // Collect the form data
+          const formData = new FormData(formEl)
+          let submitter = el as HTMLElement | null
+
+          if (el === formEl && evt instanceof SubmitEvent) {
+            // Get the submitter from the event
+            submitter = evt.submitter
+          } else {
+            // Prevent the form being submitted
+            const preventDefault = (evt: Event) => evt.preventDefault()
+            formEl.addEventListener('submit', preventDefault)
+            cleanupFn = () => {
+              formEl.removeEventListener('submit', preventDefault)
+            }
+          }
+
+          // Append the value of the form submitter if it is a button with a name
+          if (submitter instanceof HTMLButtonElement) {
+            const name = submitter.getAttribute('name')
+            if (name) formData.append(name, submitter.value)
+          }
+
+          const multipart =
+            formEl.getAttribute('enctype') === 'multipart/form-data'
+          // Leave the `Content-Type` header empty for multipart encoding so the browser can set it automatically with the correct boundary
+          if (!multipart) {
+            headers['Content-Type'] = 'application/x-www-form-urlencoded'
+          }
+
+          const formParams = new URLSearchParams(formData as any)
+          if (method === 'GET') {
+            for (const [key, value] of formParams) {
+              queryParams.append(key, value)
+            }
+          } else if (multipart) {
+            req.body = formData
+          } else {
+            req.body = formParams
+          }
+        } else {
+          throw error('FetchInvalidContentType', { action, contentType })
+        }
+
+        dispatchFetch(STARTED, el, {})
+        urlInstance.search = queryParams.toString()
 
         try {
-          if (!url?.length) {
-            throw error('FetchNoUrlProvided', { action })
+          await fetchEventSource(urlInstance.toString(), el, req)
+        } catch (e: any) {
+          if (!isWrongContent(e)) {
+            throw error('FetchFailed', { method, url, error: e.message })
           }
-
-          const initialHeaders: Record<string, any> = {
-            Accept: 'text/event-stream, text/html, application/json',
-            'Datastar-Request': true,
-          }
-          if (contentType === 'json') {
-            initialHeaders['Content-Type'] = 'application/json'
-          }
-          const headers = Object.assign({}, initialHeaders, userHeaders)
-
-          // We ignore the content-type header if using form data
-          // if missing the boundary will be set automatically
-
-          const req: FetchEventSourceInit = {
-            method,
-            headers,
-            openWhenHidden,
-            retryInterval,
-            retryScaler,
-            retryMaxWaitMs,
-            retryMaxCount,
-            signal: controller.signal,
-            onopen: async (response: Response) => {
-              if (response.status >= 400)
-                dispatchFetch(ERROR, el, { status: response.status.toString() })
-            },
-            onmessage: (evt) => {
-              if (!evt.event.startsWith('datastar')) return
-              const type = evt.event
-              const argsRawLines: Record<string, string[]> = {}
-
-              for (const line of evt.data.split('\n')) {
-                const i = line.indexOf(' ')
-                const k = line.slice(0, i)
-                const v = line.slice(i + 1)
-                ;(argsRawLines[k] ||= []).push(v)
-              }
-
-              const argsRaw = Object.fromEntries(
-                Object.entries(argsRawLines).map(([k, v]) => [k, v.join('\n')]),
-              )
-
-              dispatchFetch(type, el, argsRaw)
-            },
-            onerror: (error) => {
-              if (isWrongContent(error)) {
-                // don't retry if the content-type is wrong
-                throw error('FetchExpectedTextEventStream', { url })
-              }
-              // do nothing and it will retry
-              if (error) {
-                console.error(error.message)
-                dispatchFetch(RETRYING, el, { message: error.message })
-              }
-            },
-          }
-
-          const urlInstance = new URL(url, document.baseURI)
-          const queryParams = new URLSearchParams(urlInstance.search)
-
-          if (contentType === 'json') {
-            const res = JSON.stringify(filtered({ include, exclude }))
-            if (method === 'GET') {
-              queryParams.set('datastar', res)
-            } else {
-              req.body = res
-            }
-          } else if (contentType === 'form') {
-            const formEl = (
-              selector ? document.querySelector(selector) : el.closest('form')
-            ) as HTMLFormElement
-            if (!formEl) {
-              throw error('FetchFormNotFound', { action, selector })
-            }
-
-            // Validate the form
-            if (!formEl.checkValidity()) {
-              formEl.reportValidity()
-              cleanupFn()
-              return
-            }
-
-            // Collect the form data
-
-            const formData = new FormData(formEl)
-            let submitter = el as HTMLElement | null
-
-            if (el === formEl && evt instanceof SubmitEvent) {
-              // Get the submitter from the event
-              submitter = evt.submitter
-            } else {
-              // Prevent the form being submitted
-              const preventDefault = (evt: Event) => evt.preventDefault()
-              formEl.addEventListener('submit', preventDefault)
-              cleanupFn = () => {
-                formEl.removeEventListener('submit', preventDefault)
-                observer.disconnect()
-              }
-            }
-
-            // Append the value of the form submitter if it is a button with a name
-            if (submitter instanceof HTMLButtonElement) {
-              const name = submitter.getAttribute('name')
-              if (name) formData.append(name, submitter.value)
-            }
-
-            const multipart =
-              formEl.getAttribute('enctype') === 'multipart/form-data'
-            // Leave the `Content-Type` header empty for multipart encoding so the browser can set it automatically with the correct boundary
-            if (!multipart) {
-              headers['Content-Type'] = 'application/x-www-form-urlencoded'
-            }
-
-            const formParams = new URLSearchParams(formData as any)
-            if (method === 'GET') {
-              for (const [key, value] of formParams) {
-                queryParams.append(key, value)
-              }
-            } else if (multipart) {
-              req.body = formData
-            } else {
-              req.body = formParams
-            }
-          } else {
-            throw error('FetchInvalidContentType', { action, contentType })
-          }
-
-          dispatchFetch(STARTED, el, {})
-          urlInstance.search = queryParams.toString()
-
-          try {
-            await fetchEventSource(urlInstance.toString(), el, req)
-          } catch (e: any) {
-            if (!isWrongContent(e)) {
-              throw error('FetchFailed', { method, url, error: e.message })
-            }
-            // exit gracefully and do nothing if the content-type is wrong
-            // this can happen if the client is sending a request
-            // where no response is expected, and they haven’t
-            // set the content-type to text/event-stream
-          }
-        } finally {
-          dispatchFetch(FINISHED, el, {})
-          cleanupFn()
+          // exit gracefully and do nothing if the content-type is wrong
+          // this can happen if the client is sending a request
+          // where no response is expected, and they haven’t
+          // set the content-type to text/event-stream
         }
       } finally {
-        if (fetchAbortControllers.get(el) === controller) {
-          fetchAbortControllers.delete(el)
-        }
+        dispatchFetch(FINISHED, el, {})
+        cleanupFn?.()
+        cleanups.delete(`@${name}`)
       }
     },
   })
 
-createHttpMethod('delete', 'DELETE')
-createHttpMethod('get', 'GET')
+createHttpMethod('get', 'GET', false)
 createHttpMethod('patch', 'PATCH')
 createHttpMethod('post', 'POST')
 createHttpMethod('put', 'PUT')
+createHttpMethod('delete', 'DELETE')
 
 export const STARTED = 'started'
 export const FINISHED = 'finished'
@@ -263,17 +243,19 @@ type ResponseOverrides =
     }
 
 export type FetchArgs = {
+  selector?: string
   headers?: Record<string, string>
+  contentType?: 'json' | 'form'
+  filterSignals?: SignalFilterOptions
   openWhenHidden?: boolean
+  payload?: any
+  requestCancellation?: 'auto' | 'disabled' | AbortController
+  responseOverrides?: ResponseOverrides
+  retry?: 'auto' | 'error' | 'always' | 'never'
   retryInterval?: number
   retryScaler?: number
   retryMaxWaitMs?: number
   retryMaxCount?: number
-  responseOverrides?: ResponseOverrides
-  contentType?: 'json' | 'form'
-  filterSignals?: SignalFilterOptions
-  selector?: string
-  requestCancellation?: 'auto' | 'disabled' | AbortController
 }
 
 // Below originally from https://github.com/Azure/fetch-event-source/blob/main/LICENSE
@@ -443,11 +425,12 @@ type FetchEventSourceInit = RequestInit & {
   onerror?: (err: any) => number | null | undefined | void
   openWhenHidden?: boolean
   fetch?: typeof fetch
+  retry?: 'auto' | 'error' | 'always' | 'never'
   retryInterval?: number
   retryScaler?: number
   retryMaxWaitMs?: number
   retryMaxCount?: number
-  overrides?: ResponseOverrides
+  responseOverrides?: ResponseOverrides
 }
 
 const fetchEventSource = (
@@ -462,11 +445,12 @@ const fetchEventSource = (
     onerror,
     openWhenHidden,
     fetch: inputFetch,
+    retry = 'auto',
     retryInterval = 1_000,
     retryScaler = 2,
     retryMaxWaitMs = 30_000,
     retryMaxCount = 10,
-    overrides,
+    responseOverrides,
     ...rest
   }: FetchEventSourceInit,
 ): Promise<void> => {
@@ -486,7 +470,7 @@ const fetchEventSource = (
       document.addEventListener('visibilitychange', onVisibilityChange)
     }
 
-    let retryTimer = 0
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
     const dispose = () => {
       document.removeEventListener('visibilitychange', onVisibilityChange)
       clearTimeout(retryTimer)
@@ -506,16 +490,13 @@ const fetchEventSource = (
     let baseRetryInterval = retryInterval
     const create = async () => {
       curRequestController = new AbortController()
+      const curRequestSignal = curRequestController.signal
       try {
         const response = await fetch(input, {
           ...rest,
           headers,
-          signal: curRequestController.signal,
+          signal: curRequestSignal,
         })
-
-        // on successful connection, reset the retry logic
-        retries = 0
-        retryInterval = baseRetryInterval
 
         await onopen(response)
 
@@ -523,7 +504,7 @@ const fetchEventSource = (
           dispatchType: string,
           response: Response,
           name: string,
-          overrides?: ResponseOverrides,
+          responseOverrides?: ResponseOverrides,
           ...argNames: string[]
         ) => {
           const argsRaw: Record<string, string> = {
@@ -531,8 +512,8 @@ const fetchEventSource = (
           }
           for (const n of argNames) {
             let v = response.headers.get(`datastar-${kebab(n)}`)
-            if (overrides) {
-              const o = (overrides as any)[n]
+            if (responseOverrides) {
+              const o = (responseOverrides as any)[n]
               if (o) v = typeof o === 'string' ? o : JSON.stringify(o)
             }
             if (v) argsRaw[n] = v
@@ -543,13 +524,39 @@ const fetchEventSource = (
           resolve()
         }
 
+        const status = response.status
+        const isNoContentStatus = status === 204
+        const isRedirectStatus = status >= 300 && status < 400
+        const isErrorStatus = status >= 400 && status < 600
+
+        if (status !== 200) {
+          onclose?.()
+          if (
+            retry !== 'never' &&
+            !isNoContentStatus &&
+            !isRedirectStatus &&
+            (retry === 'always' || (retry === 'error' && isErrorStatus))
+          ) {
+            clearTimeout(retryTimer)
+            retryTimer = setTimeout(create, retryInterval)
+            return
+          }
+          dispose()
+          resolve()
+          return
+        }
+
+        // on successful connection, reset the retry logic
+        retries = 0
+        retryInterval = baseRetryInterval
+
         const ct = response.headers.get('Content-Type')
         if (ct?.includes('text/html')) {
           return await dispatchNonSSE(
             'datastar-patch-elements',
             response,
             'elements',
-            overrides,
+            responseOverrides,
             'selector',
             'mode',
             'useViewTransition',
@@ -561,7 +568,7 @@ const fetchEventSource = (
             'datastar-patch-signals',
             response,
             'signals',
-            overrides,
+            responseOverrides,
             'onlyIfMissing',
           )
         }
@@ -607,10 +614,17 @@ const fetchEventSource = (
         )
 
         onclose?.()
+
+        if (retry === 'always' && !isRedirectStatus) {
+          clearTimeout(retryTimer)
+          retryTimer = setTimeout(create, retryInterval)
+          return
+        }
+
         dispose()
         resolve()
       } catch (err) {
-        if (!curRequestController.signal.aborted) {
+        if (!curRequestSignal.aborted) {
           // if we haven’t aborted the request ourselves:
           try {
             // check if we need to retry:

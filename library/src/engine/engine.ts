@@ -1,18 +1,18 @@
 import { DATASTAR_FETCH_EVENT, DSP, DSS } from '@engine/consts'
-import { snake } from '@utils/text'
 import { root } from '@engine/signals'
 import type {
-  ActionPlugin,
   ActionContext,
+  ActionPlugin,
   AttributeContext,
   AttributePlugin,
   DatastarFetchEvent,
   HTMLOrSVG,
+  Modifiers,
   Requirement,
   WatcherPlugin,
 } from '@engine/types'
 import { isHTMLOrSVG } from '@utils/dom'
-import { aliasify } from '@utils/text'
+import { aliasify, snake } from '@utils/text'
 
 const url = 'https://data-star.dev/errors'
 
@@ -50,11 +50,12 @@ export const actions: Record<
   },
 )
 
-// Map of cleanups keyed by element and attribute name
-const removals = new Map<HTMLOrSVG, Map<string, () => void>>()
+// Map of cleanups keyed by element, attribute name, and cleanup name
+const removals = new Map<HTMLOrSVG, Map<string, Map<string, () => void>>>()
 
 const queuedAttributes: AttributePlugin[] = []
 const queuedAttributeNames = new Set<string>()
+const observedRoots = new WeakSet<Node>()
 export const attribute = <R extends Requirement, B extends boolean>(
   plugin: AttributePlugin<R, B>,
 ): void => {
@@ -103,13 +104,13 @@ export const watcher = (plugin: WatcherPlugin): void => {
 
 const cleanupEls = (els: Iterable<HTMLOrSVG>): void => {
   for (const el of els) {
-    const cleanups = removals.get(el)
-    // If removals has el, delete it and run all cleanup functions
-    if (removals.delete(el)) {
-      for (const cleanup of cleanups!.values()) {
-        cleanup()
+    const elCleanups = removals.get(el)
+    if (elCleanups && removals.delete(el)) {
+      for (const attrCleanups of elCleanups.values()) {
+        for (const cleanup of attrCleanups.values()) {
+          cleanup()
+        }
       }
-      cleanups!.clear()
     }
   }
 }
@@ -166,10 +167,15 @@ const observe = (mutations: MutationRecord[]) => {
       const key = attributeName!.slice(5)
       const value = target.getAttribute(attributeName!)
       if (value === null) {
-        const cleanups = removals.get(target)
-        if (cleanups) {
-          cleanups.get(key)?.()
-          cleanups.delete(key)
+        const elCleanups = removals.get(target)
+        if (elCleanups) {
+          const attrCleanups = elCleanups.get(key)
+          if (attrCleanups) {
+            for (const cleanup of attrCleanups.values()) {
+              cleanup()
+            }
+            elCleanups.delete(key)
+          }
         }
       } else {
         applyAttributePlugin(target, key, value)
@@ -181,19 +187,45 @@ const observe = (mutations: MutationRecord[]) => {
 // TODO: mutation observer per root so applying to web component doesnt overwrite main observer
 const mutationObserver = new MutationObserver(observe)
 
+export const parseAttributeKey = (
+  rawKey: string,
+): {
+  pluginName: string
+  key: string | undefined
+  mods: Modifiers
+} => {
+  const [namePart, ...rawModifiers] = rawKey.split('__')
+  const [pluginName, key] = namePart.split(/:(.+)/)
+  const mods: Modifiers = new Map()
+
+  for (const rawMod of rawModifiers) {
+    const [label, ...mod] = rawMod.split('.')
+    mods.set(label, new Set(mod))
+  }
+
+  return { pluginName, key, mods }
+}
+
+export const isDocumentObserverActive = () =>
+  observedRoots.has(document.documentElement)
+
 export const apply = (
   root: HTMLOrSVG | ShadowRoot = document.documentElement,
+  observeRoot = true,
 ): void => {
   if (isHTMLOrSVG(root)) {
     applyEls([root], true)
   }
   applyEls(root.querySelectorAll<HTMLOrSVG>('*'), true)
 
-  mutationObserver.observe(root, {
-    subtree: true,
-    childList: true,
-    attributes: true,
-  })
+  if (observeRoot) {
+    mutationObserver.observe(root, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+    })
+    observedRoots.add(root)
+  }
 }
 
 const applyAttributePlugin = (
@@ -204,14 +236,13 @@ const applyAttributePlugin = (
 ): void => {
   if (!ALIAS || attrKey.startsWith(`${ALIAS}-`)) {
     const rawKey = ALIAS ? attrKey.slice(ALIAS.length + 1) : attrKey
-    const [namePart, ...rawModifiers] = rawKey.split('__')
-    const [pluginName, key] = namePart.split(/:(.+)/)
+    const { pluginName, key, mods } = parseAttributeKey(rawKey)
     const plugin = attributePlugins.get(pluginName)
     if ((!onlyNew || queuedAttributeNames.has(pluginName)) && plugin) {
       const ctx = {
         el,
         rawKey,
-        mods: new Map(),
+        mods,
         error: error.bind(0, {
           plugin: { type: 'attribute', name: plugin.name },
           element: { id: el.id, tag: el.tagName },
@@ -219,6 +250,10 @@ const applyAttributePlugin = (
         }),
         key,
         value,
+        loadedPluginNames: {
+          actions: new Set(actionPlugins.keys()),
+          attributes: new Set(attributePlugins.keys()),
+        },
         rx: undefined,
       } as AttributeContext
 
@@ -235,7 +270,11 @@ const applyAttributePlugin = (
             : plugin.requirement.value)) ||
         'allowed'
 
-      if (key) {
+      const keyProvided = key !== undefined && key !== null && key !== ''
+      const valueProvided =
+        value !== undefined && value !== null && value !== ''
+
+      if (keyProvided) {
         if (keyReq === 'denied') {
           throw ctx.error('KeyNotAllowed')
         }
@@ -243,7 +282,7 @@ const applyAttributePlugin = (
         throw ctx.error('KeyRequired')
       }
 
-      if (value) {
+      if (valueProvided) {
         if (valueReq === 'denied') {
           throw ctx.error('ValueNotAllowed')
         }
@@ -252,43 +291,47 @@ const applyAttributePlugin = (
       }
 
       if (keyReq === 'exclusive' || valueReq === 'exclusive') {
-        if (key && value) {
+        if (keyProvided && valueProvided) {
           throw ctx.error('KeyAndValueProvided')
         }
-        if (!key && !value) {
+        if (!keyProvided && !valueProvided) {
           throw ctx.error('KeyOrValueRequired')
         }
       }
 
-      if (value) {
+      const cleanups = new Map<string, () => void>()
+      if (valueProvided) {
         let cachedRx: GenRxFn
         ctx.rx = (...args: any[]) => {
           if (!cachedRx) {
             cachedRx = genRx(value, {
               returnsValue: plugin.returnsValue,
               argNames: plugin.argNames,
+              cleanups,
             })
           }
           return cachedRx(el, ...args)
         }
       }
 
-      for (const rawMod of rawModifiers) {
-        const [label, ...mod] = rawMod.split('.')
-        ctx.mods.set(label, new Set(mod))
-      }
-
       const cleanup = plugin.apply(ctx)
       if (cleanup) {
-        let cleanups = removals.get(el)
-        if (cleanups) {
-          cleanups.get(rawKey)?.()
-        } else {
-          cleanups = new Map()
-          removals.set(el, cleanups)
-        }
-        cleanups.set(rawKey, cleanup)
+        cleanups.set('attribute', cleanup)
       }
+
+      let elCleanups = removals.get(el)
+      if (elCleanups) {
+        const attrCleanups = elCleanups.get(rawKey)
+        if (attrCleanups) {
+          for (const oldCleanup of attrCleanups.values()) {
+            oldCleanup()
+          }
+        }
+      } else {
+        elCleanups = new Map()
+        removals.set(el, elCleanups)
+      }
+      elCleanups.set(rawKey, cleanups)
     }
   }
 }
@@ -296,13 +339,18 @@ const applyAttributePlugin = (
 type GenRxOptions = {
   returnsValue?: boolean
   argNames?: string[]
+  cleanups?: Map<string, () => void>
 }
 
 type GenRxFn = <T>(el: HTMLOrSVG, ...args: any[]) => T
 
 const genRx = (
   value: string,
-  { returnsValue = false, argNames = [] }: GenRxOptions = {},
+  {
+    returnsValue = false,
+    argNames = [],
+    cleanups = new Map(),
+  }: GenRxOptions = {},
 ): GenRxFn => {
   let expr = ''
   if (returnsValue) {
@@ -376,13 +424,8 @@ const genRx = (
         .split('.')
         .reduce((acc: string, part: string) => `${acc}['${part}']`, '$'),
     )
-    // [$x] -> [$['x']] ($ inside brackets)
-    .replace(
-      /\[(\$[a-zA-Z_\d]\w*)\]/g,
-      (_, varName) => `[$['${varName.slice(1)}']]`,
-    )
 
-  expr = expr.replaceAll(/@(\w+)\(/g, '__action("$1",evt,')
+  expr = expr.replaceAll(/@([A-Za-z_$][\w$]*)\(/g, '__action("$1",evt,')
 
   // Replace any escaped values
   for (const [k, v] of escaped) {
@@ -408,6 +451,7 @@ const genRx = (
               el,
               evt,
               error: err,
+              cleanups,
             },
             ...args,
           )

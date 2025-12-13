@@ -5,6 +5,7 @@
 import { attribute } from '@engine'
 import { beginBatch, endBatch } from '@engine/signals'
 import type { HTMLOrSVG } from '@engine/types'
+import { clamp } from '@utils/math'
 import { modifyTiming } from '@utils/timing'
 import { modifyViewTransition } from '@utils/view-transitions'
 
@@ -29,11 +30,14 @@ attribute({
       options.threshold = 1
     } else if (mods.has('half')) {
       options.threshold = 0.5
+    } else if (mods.get('threshold')) {
+      options.threshold = clamp(Number(mods.get('threshold')), 0, 1)
     }
+    const exit = mods.has('exit')
     let observer: IntersectionObserver | null = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting) {
+          if (entry.isIntersecting !== exit) {
             callback()
             if (observer && once.has(el)) {
               observer.disconnect()

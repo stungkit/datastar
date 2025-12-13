@@ -13,14 +13,13 @@ attribute({
   },
   returnsValue: true,
   apply({ key, el, mods, rx }) {
-    if (key) {
-      key = modifyCasing(key, mods, 'kebab')
-    }
+    key &&= modifyCasing(key, mods, 'kebab')
 
+    let classes: Record<string, boolean>
     const callback = () => {
       observer.disconnect()
 
-      const classes = key
+      classes = key
         ? { [key]: rx() as boolean }
         : (rx() as Record<string, boolean>)
 
@@ -50,10 +49,6 @@ attribute({
     return () => {
       observer.disconnect()
       cleanup()
-
-      const classes = key
-        ? { [key]: rx() as boolean }
-        : (rx() as Record<string, boolean>)
 
       for (const k in classes) {
         const classNames = k.split(/\s+/).filter((cn) => cn.length > 0)

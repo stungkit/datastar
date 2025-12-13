@@ -23,6 +23,7 @@ export type ActionContext = {
   el: HTMLOrSVG
   evt?: Event
   error: ErrorFn
+  cleanups: Map<string, () => void>
 }
 
 export type RequirementType = 'allowed' | 'must' | 'denied' | 'exclusive'
@@ -72,6 +73,10 @@ export type AttributeContext<
   rawKey: string
   evt?: Event
   error: ErrorFn
+  loadedPluginNames: {
+    actions: Readonly<Set<string>>
+    attributes: Readonly<Set<string>>
+  }
 } & ReqFields<R, RxReturn>
 
 export type AttributePlugin<
