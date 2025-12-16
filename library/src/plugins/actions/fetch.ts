@@ -236,6 +236,7 @@ type ResponseOverrides =
   | {
       selector?: string
       mode?: string
+      namespace?: string
       useViewTransition?: boolean
       namespace?: string
     }
@@ -560,6 +561,7 @@ const fetchEventSource = (
             responseOverrides,
             'selector',
             'mode',
+            'namespace',
             'useViewTransition',
             'namespace'
           )

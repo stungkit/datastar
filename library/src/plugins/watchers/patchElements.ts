@@ -29,11 +29,11 @@ const NAMESPACES = ['html', 'svg', 'mathml'] as const
 type Namespace = (typeof NAMESPACES)[number]
 
 type PatchElementsArgs = {
-  elements: string
-  mode: PatchElementsMode
   selector: string
-  useViewTransition: boolean
+  mode: PatchElementsMode
   namespace: Namespace
+  useViewTransition: boolean
+  elements: string
 }
 
 watcher({
@@ -41,11 +41,11 @@ watcher({
   apply(
     ctx,
     {
-      elements = '',
       selector = '',
       mode = 'outer',
-      useViewTransition = '',
       namespace = 'html',
+      useViewTransition = '',
+      elements = '',
     },
   ) {
     if (!isValidType(PATCH_MODES, mode)) {
@@ -61,11 +61,11 @@ watcher({
     }
 
     const args2: PatchElementsArgs = {
-      mode,
       selector,
-      elements,
-      useViewTransition: useViewTransition.trim() === 'true',
+      mode,
       namespace,
+      useViewTransition: useViewTransition.trim() === 'true',
+      elements,
     }
 
     if (supportsViewTransitions && useViewTransition) {
@@ -78,7 +78,7 @@ watcher({
 
 const onPatchElements = (
   { error }: WatcherContext,
-  { elements, selector, mode, namespace }: PatchElementsArgs,
+  { selector, mode, namespace, elements }: PatchElementsArgs,
 ) => {
   const elementsWithSvgsRemoved = elements.replace(
     /<svg(\s[^>]*>|>)([\s\S]*?)<\/svg>/gim,

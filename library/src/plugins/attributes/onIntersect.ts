@@ -31,7 +31,7 @@ attribute({
     } else if (mods.has('half')) {
       options.threshold = 0.5
     } else if (mods.get('threshold')) {
-      options.threshold = clamp(Number(mods.get('threshold')), 0, 1)
+      options.threshold = clamp(Number(mods.get('threshold')), 0, 100) / 100
     }
     const exit = mods.has('exit')
     let observer: IntersectionObserver | null = new IntersectionObserver(
