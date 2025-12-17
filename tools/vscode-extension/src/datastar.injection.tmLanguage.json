@@ -120,7 +120,7 @@
       ]
     },
     "signal-reference": {
-      "match": "(\\$[a-zA-Z_][a-zA-Z0-9_]*)((\\?)?\\.[a-zA-Z_][a-zA-Z0-9_]*(?!\\())*(\\[[^\\]]+\\])?",
+      "match": "(\\$\\$?[a-zA-Z_][a-zA-Z0-9_]*)((\\?)?\\.[a-zA-Z_][a-zA-Z0-9_]*(?!\\())*(\\[[^\\]]+\\])?",
       "captures": {
         "1": {
           "name": "variable.other.datastar.signal"
