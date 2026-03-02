@@ -3,10 +3,14 @@ import { DATASTAR_SIGNAL_PATCH_EVENT } from '@engine/consts'
 export type JSONPatch = Record<string, any> & { length?: never }
 export type Paths = [string, any][]
 
+export type WatcherArgsValue = string | Element | DocumentFragment | undefined
+
+export type WatcherArgs = Record<string, WatcherArgsValue>
+
 export type DatastarFetchEvent = {
   type: string
   el: HTMLOrSVG
-  argsRaw: Record<string, string>
+  argsRaw: WatcherArgs
 }
 
 export type CustomEventMap = {
@@ -97,7 +101,7 @@ export type WatcherContext = {
 // A plugin that runs on the global scope of the Datastar instance
 export type WatcherPlugin = {
   name: string
-  apply: (ctx: WatcherContext, args: Record<string, string | undefined>) => void
+  apply: (ctx: WatcherContext, args: WatcherArgs) => void
 }
 
 export type ActionPlugins = Record<string, ActionPlugin>

@@ -12,7 +12,7 @@ import type {
   WatcherPlugin,
 } from '@engine/types'
 import { isHTMLOrSVG } from '@utils/dom'
-import { aliasify, snake } from '@utils/text'
+import { aliasify, snake, unaliasify } from '@utils/text'
 
 const url = 'https://data-star.dev/errors'
 
@@ -56,6 +56,7 @@ const removals = new Map<HTMLOrSVG, Map<string, Map<string, () => void>>>()
 const queuedAttributes: AttributePlugin[] = []
 const queuedAttributeNames = new Set<string>()
 const observedRoots = new WeakSet<Node>()
+
 export const attribute = <R extends Requirement, B extends boolean>(
   plugin: AttributePlugin<R, B>,
 ): void => {
@@ -68,7 +69,7 @@ export const attribute = <R extends Requirement, B extends boolean>(
         attributePlugins.set(attribute.name, attribute)
       }
       queuedAttributes.length = 0
-      apply()
+      applyQueued()
       queuedAttributeNames.clear()
     })
   }
@@ -123,13 +124,17 @@ const shouldIgnore = (el: HTMLOrSVG) =>
 const applyEls = (els: Iterable<HTMLOrSVG>, onlyNew?: boolean): void => {
   for (const el of els) {
     if (!shouldIgnore(el)) {
+      const appliedKeys = new Set<string>()
       for (const key in el.dataset) {
-        applyAttributePlugin(
-          el,
-          key.replace(/[A-Z]/g, '-$&').toLowerCase(),
-          el.dataset[key]!,
-          onlyNew,
-        )
+        const attrKey = key.replace(/[A-Z]/g, '-$&').toLowerCase()
+        appliedKeys.add(attrKey)
+        applyAttributePlugin(el, attrKey, el.dataset[key]!, onlyNew)
+      }
+      for (const attr of Array.from(el.attributes)) {
+        if (!attr.name.startsWith('data-')) continue
+        const attrKey = attr.name.slice(5)
+        if (appliedKeys.has(attrKey)) continue
+        applyAttributePlugin(el, attrKey, attr.value, onlyNew)
       }
     }
   }
@@ -164,7 +169,9 @@ const observe = (mutations: MutationRecord[]) => {
       !shouldIgnore(target)
     ) {
       // skip over 'data-'
-      const key = attributeName!.slice(5)
+      const rawAttrKey = attributeName!.slice(5)
+      const key = unaliasify(rawAttrKey)
+      if (!key) continue
       const value = target.getAttribute(attributeName!)
       if (value === null) {
         const elCleanups = removals.get(target)
@@ -178,7 +185,7 @@ const observe = (mutations: MutationRecord[]) => {
           }
         }
       } else {
-        applyAttributePlugin(target, key, value)
+        applyAttributePlugin(target, rawAttrKey, value)
       }
     }
   }
@@ -209,7 +216,7 @@ export const parseAttributeKey = (
 export const isDocumentObserverActive = () =>
   observedRoots.has(document.documentElement)
 
-export const apply = (
+const applyQueued = (
   root: HTMLOrSVG | ShadowRoot = document.documentElement,
   observeRoot = true,
 ): void => {
@@ -228,111 +235,130 @@ export const apply = (
   }
 }
 
+export const apply = (
+  root: HTMLOrSVG | ShadowRoot = document.documentElement,
+  observeRoot = true,
+): void => {
+  if (isHTMLOrSVG(root)) {
+    applyEls([root])
+  }
+  applyEls(root.querySelectorAll<HTMLOrSVG>('*'))
+
+  if (observeRoot) {
+    mutationObserver.observe(root, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+    })
+    observedRoots.add(root)
+  }
+}
+
 const applyAttributePlugin = (
   el: HTMLOrSVG,
   attrKey: string,
   value: string,
   onlyNew?: boolean,
 ): void => {
-  if (!ALIAS || attrKey.startsWith(`${ALIAS}-`)) {
-    const rawKey = ALIAS ? attrKey.slice(ALIAS.length + 1) : attrKey
-    const { pluginName, key, mods } = parseAttributeKey(rawKey)
-    const plugin = attributePlugins.get(pluginName)
-    if ((!onlyNew || queuedAttributeNames.has(pluginName)) && plugin) {
-      const ctx = {
-        el,
-        rawKey,
-        mods,
-        error: error.bind(0, {
-          plugin: { type: 'attribute', name: plugin.name },
-          element: { id: el.id, tag: el.tagName },
-          expression: { rawKey, key, value },
-        }),
-        key,
-        value,
-        loadedPluginNames: {
-          actions: new Set(actionPlugins.keys()),
-          attributes: new Set(attributePlugins.keys()),
-        },
-        rx: undefined,
-      } as AttributeContext
+  const rawKey = unaliasify(attrKey)
+  if (!rawKey) return
+  const { pluginName, key, mods } = parseAttributeKey(rawKey)
+  const plugin = attributePlugins.get(pluginName)
+  const shouldApply = (!onlyNew || queuedAttributeNames.has(pluginName)) && !!plugin
+  if (shouldApply) {
+    const ctx = {
+      el,
+      rawKey,
+      mods,
+      error: error.bind(0, {
+        plugin: { type: 'attribute', name: plugin.name },
+        element: { id: el.id, tag: el.tagName },
+        expression: { rawKey, key, value },
+      }),
+      key,
+      value,
+      loadedPluginNames: {
+        actions: new Set(actionPlugins.keys()),
+        attributes: new Set(attributePlugins.keys()),
+      },
+      rx: undefined,
+    } as AttributeContext
 
-      const keyReq =
-        (plugin.requirement &&
-          (typeof plugin.requirement === 'string'
-            ? plugin.requirement
-            : plugin.requirement.key)) ||
-        'allowed'
-      const valueReq =
-        (plugin.requirement &&
-          (typeof plugin.requirement === 'string'
-            ? plugin.requirement
-            : plugin.requirement.value)) ||
-        'allowed'
+    const keyReq =
+      (plugin.requirement &&
+        (typeof plugin.requirement === 'string'
+          ? plugin.requirement
+          : plugin.requirement.key)) ||
+      'allowed'
+    const valueReq =
+      (plugin.requirement &&
+        (typeof plugin.requirement === 'string'
+          ? plugin.requirement
+          : plugin.requirement.value)) ||
+      'allowed'
 
-      const keyProvided = key !== undefined && key !== null && key !== ''
-      const valueProvided =
-        value !== undefined && value !== null && value !== ''
+    const keyProvided = key !== undefined && key !== null && key !== ''
+    const valueProvided =
+      value !== undefined && value !== null && value !== ''
 
-      if (keyProvided) {
-        if (keyReq === 'denied') {
-          throw ctx.error('KeyNotAllowed')
-        }
-      } else if (keyReq === 'must') {
-        throw ctx.error('KeyRequired')
+    if (keyProvided) {
+      if (keyReq === 'denied') {
+        throw ctx.error('KeyNotAllowed')
       }
-
-      if (valueProvided) {
-        if (valueReq === 'denied') {
-          throw ctx.error('ValueNotAllowed')
-        }
-      } else if (valueReq === 'must') {
-        throw ctx.error('ValueRequired')
-      }
-
-      if (keyReq === 'exclusive' || valueReq === 'exclusive') {
-        if (keyProvided && valueProvided) {
-          throw ctx.error('KeyAndValueProvided')
-        }
-        if (!keyProvided && !valueProvided) {
-          throw ctx.error('KeyOrValueRequired')
-        }
-      }
-
-      const cleanups = new Map<string, () => void>()
-      if (valueProvided) {
-        let cachedRx: GenRxFn
-        ctx.rx = (...args: any[]) => {
-          if (!cachedRx) {
-            cachedRx = genRx(value, {
-              returnsValue: plugin.returnsValue,
-              argNames: plugin.argNames,
-              cleanups,
-            })
-          }
-          return cachedRx(el, ...args)
-        }
-      }
-
-      const cleanup = plugin.apply(ctx)
-      if (cleanup) {
-        cleanups.set('attribute', cleanup)
-      }
-
-      let elCleanups = removals.get(el)
-      if (elCleanups) {
-        const attrCleanups = elCleanups.get(rawKey)
-        if (attrCleanups) {
-          for (const oldCleanup of attrCleanups.values()) {
-            oldCleanup()
-          }
-        }
-      } else {
-        elCleanups = new Map()
-        removals.set(el, elCleanups)
-      }
-      elCleanups.set(rawKey, cleanups)
+    } else if (keyReq === 'must') {
+      throw ctx.error('KeyRequired')
     }
+
+    if (valueProvided) {
+      if (valueReq === 'denied') {
+        throw ctx.error('ValueNotAllowed')
+      }
+    } else if (valueReq === 'must') {
+      throw ctx.error('ValueRequired')
+    }
+
+    if (keyReq === 'exclusive' || valueReq === 'exclusive') {
+      if (keyProvided && valueProvided) {
+        throw ctx.error('KeyAndValueProvided')
+      }
+      if (!keyProvided && !valueProvided) {
+        throw ctx.error('KeyOrValueRequired')
+      }
+    }
+
+    const cleanups = new Map<string, () => void>()
+    if (valueProvided) {
+      let cachedRx: GenRxFn
+      ctx.rx = (...args: any[]) => {
+        if (!cachedRx) {
+          cachedRx = genRx(value, {
+            returnsValue: plugin.returnsValue,
+            argNames: plugin.argNames,
+            cleanups,
+          })
+        }
+        return cachedRx(el, ...args)
+      }
+    }
+
+    const cleanup = plugin.apply(ctx)
+    if (cleanup) {
+      cleanups.set('attribute', cleanup)
+    }
+
+    let elCleanups = removals.get(el)
+    if (elCleanups) {
+      const attrCleanups = elCleanups.get(rawKey)
+      if (attrCleanups) {
+        for (const oldCleanup of attrCleanups.values()) {
+          oldCleanup()
+        }
+      }
+    } else {
+      elCleanups = new Map()
+      removals.set(el, elCleanups)
+    }
+    elCleanups.set(rawKey, cleanups)
   }
 }
 
@@ -415,15 +441,26 @@ const genRx = (
   //   $123            -> $['123']
   //   $foo.0.name     -> $['foo']['0']['name']
 
-  expr = expr
-    // $['x'] -> $x (normalize existing bracket notation)
-    .replace(/\$\['([a-zA-Z_$\d][\w$]*)'\]/g, '$$$1')
-    // $x -> $['x'] (including dots and hyphens)
-    .replace(/\$([a-zA-Z_\d]\w*(?:[.-]\w+)*)/g, (_, signalName) =>
-      signalName
+  // Skip replacements inside string/template literals. 
+  // Template interpolation support rewrites `${...}` only when braces are non-nested.
+  expr = expr.replace(
+    /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\$]|\$(?!\{))*`)|\$\{([^{}]*)\}|\$([a-zA-Z_\d]\w*(?:[.-]\w+)*)/g,
+    (match, quoted, interpolationExpr, signalName) => {
+      if (quoted) return match
+      if (interpolationExpr !== undefined) {
+        return `\${${interpolationExpr.replace(
+          /\$([a-zA-Z_\d]\w*(?:[.-]\w+)*)/g,
+          (_: string, innerSignalName: string) =>
+            innerSignalName
+              .split('.')
+              .reduce((acc: string, part: string) => `${acc}['${part}']`, '$'),
+        )}}`
+      }
+      return signalName
         .split('.')
-        .reduce((acc: string, part: string) => `${acc}['${part}']`, '$'),
-    )
+        .reduce((acc: string, part: string) => `${acc}['${part}']`, '$')
+    },
+  )
 
   expr = expr.replaceAll(/@([A-Za-z_$][\w$]*)\(/g, '__action("$1",evt,')
 

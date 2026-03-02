@@ -9,8 +9,11 @@ import type {
   DatastarFetchEvent,
   HTMLOrSVG,
   SignalFilterOptions,
+  WatcherArgs,
 } from '@engine/types'
 import { kebab } from '@utils/text'
+
+const abortControllers = new WeakMap<HTMLOrSVG, AbortController>()
 
 const createHttpMethod = (
   name: string,
@@ -41,7 +44,11 @@ const createHttpMethod = (
         requestCancellation instanceof AbortController
           ? requestCancellation
           : new AbortController()
-      if (requestCancellation === 'auto') {
+      if (requestCancellation === 'auto' || requestCancellation === 'cleanup') {
+        abortControllers.get(el)?.abort()
+        abortControllers.set(el, controller)
+      }
+      if (requestCancellation === 'cleanup') {
         cleanups.get(`@${name}`)?.()
         cleanups.set(`@${name}`, async () => {
           controller.abort()
@@ -50,7 +57,7 @@ const createHttpMethod = (
         })
       }
 
-      let cleanupFn = null
+      let cleanupFn = () => {}
 
       try {
         if (!url?.length) {
@@ -70,6 +77,7 @@ const createHttpMethod = (
         // if missing the boundary will be set automatically
 
         const req: FetchEventSourceInit = {
+          input: '',
           method,
           headers,
           openWhenHidden,
@@ -114,82 +122,85 @@ const createHttpMethod = (
           },
         }
 
-        const urlInstance = new URL(url, document.baseURI)
-        const queryParams = new URLSearchParams(urlInstance.search)
-
-        if (contentType === 'json') {
-          startPeeking()
-          payload =
-            payload !== undefined ? payload : filtered({ include, exclude })
-          stopPeeking()
-          const body = JSON.stringify(payload)
-          if (method === 'GET') {
-            queryParams.set('datastar', body)
-          } else {
-            req.body = body
-          }
-        } else if (contentType === 'form') {
-          const formEl = (
-            selector ? document.querySelector(selector) : el.closest('form')
-          ) as HTMLFormElement
-          if (!formEl) {
-            throw error('FetchFormNotFound', { action, selector })
-          }
-
-          // Validate the form
-          if (!formEl.noValidate && !formEl.checkValidity()) {
-            formEl.reportValidity()
-            return
-          }
-
-          // Collect the form data
-          const formData = new FormData(formEl)
-          let submitter = el as HTMLElement | null
-
-          if (el === formEl && evt instanceof SubmitEvent) {
-            // Get the submitter from the event
-            submitter = evt.submitter
-          } else {
-            // Prevent the form being submitted
-            const preventDefault = (evt: Event) => evt.preventDefault()
-            formEl.addEventListener('submit', preventDefault)
-            cleanupFn = () => {
-              formEl.removeEventListener('submit', preventDefault)
+        const delayedFetchEventSourceInit = () => {
+          const urlInstance = new URL(url, document.baseURI)
+          const queryParams = new URLSearchParams(urlInstance.search)
+          if (contentType === 'json') {
+            startPeeking()
+            payload =
+              payload !== undefined ? payload : filtered({ include, exclude })
+            stopPeeking()
+            const body = JSON.stringify(payload)
+            if (method === 'GET') {
+              queryParams.set('datastar', body)
+            } else {
+              req.body = body
             }
-          }
-
-          // Append the value of the form submitter if it is a button with a name
-          if (submitter instanceof HTMLButtonElement) {
-            const name = submitter.getAttribute('name')
-            if (name) formData.append(name, submitter.value)
-          }
-
-          const multipart =
-            formEl.getAttribute('enctype') === 'multipart/form-data'
-          // Leave the `Content-Type` header empty for multipart encoding so the browser can set it automatically with the correct boundary
-          if (!multipart) {
-            headers['Content-Type'] = 'application/x-www-form-urlencoded'
-          }
-
-          const formParams = new URLSearchParams(formData as any)
-          if (method === 'GET') {
-            for (const [key, value] of formParams) {
-              queryParams.append(key, value)
+          } else if (contentType === 'form') {
+            const formEl = (
+              selector ? document.querySelector(selector) : el.closest('form')
+            ) as HTMLFormElement
+            if (!formEl) {
+              throw error('FetchFormNotFound', { action, selector })
             }
-          } else if (multipart) {
-            req.body = formData
+
+            // Validate the form
+            if (!formEl.noValidate && !formEl.checkValidity()) {
+              formEl.reportValidity()
+              return
+            }
+
+            // Collect the form data
+            const formData = new FormData(formEl)
+            let submitter = el as HTMLElement | null
+
+            if (el === formEl && evt instanceof SubmitEvent) {
+              // Get the submitter from the event
+              submitter = evt.submitter
+            } else {
+              // Prevent the form being submitted
+              const preventDefault = (evt: Event) => evt.preventDefault()
+              formEl.addEventListener('submit', preventDefault)
+              cleanupFn = () => {
+                formEl.removeEventListener('submit', preventDefault)
+              }
+            }
+
+            // Append the value of the form submitter if it is a button with a name
+            if (submitter instanceof HTMLButtonElement) {
+              const name = submitter.getAttribute('name')
+              if (name) formData.append(name, submitter.value)
+            }
+
+            const multipart =
+              formEl.getAttribute('enctype') === 'multipart/form-data'
+            // Leave the `Content-Type` header empty for multipart encoding so the browser can set it automatically with the correct boundary
+            if (!multipart) {
+              headers['Content-Type'] = 'application/x-www-form-urlencoded'
+            }
+
+            const formParams = new URLSearchParams(formData as any)
+            if (method === 'GET') {
+              for (const [key, value] of formParams) {
+                queryParams.append(key, value)
+              }
+            } else if (multipart) {
+              req.body = formData
+            } else {
+              req.body = formParams
+            }
           } else {
-            req.body = formParams
+            throw error('FetchInvalidContentType', { action, contentType })
           }
-        } else {
-          throw error('FetchInvalidContentType', { action, contentType })
+          urlInstance.search = queryParams.toString()
+          req.input = urlInstance.toString()
+          return req
         }
 
         dispatchFetch(STARTED, el, {})
-        urlInstance.search = queryParams.toString()
 
         try {
-          await fetchEventSource(urlInstance.toString(), el, req)
+          await fetchEventSource(el, delayedFetchEventSourceInit)
         } catch (e: any) {
           if (!isWrongContent(e)) {
             throw error('FetchFailed', { method, url, error: e.message })
@@ -201,7 +212,7 @@ const createHttpMethod = (
         }
       } finally {
         dispatchFetch(FINISHED, el, {})
-        cleanupFn?.()
+        cleanupFn()
         cleanups.delete(`@${name}`)
       }
     },
@@ -219,11 +230,7 @@ export const ERROR = 'error'
 export const RETRYING = 'retrying'
 export const RETRIES_FAILED = 'retries-failed'
 
-const dispatchFetch = (
-  type: string,
-  el: HTMLOrSVG,
-  argsRaw: Record<string, string>,
-) =>
+const dispatchFetch = (type: string, el: HTMLOrSVG, argsRaw: WatcherArgs) =>
   document.dispatchEvent(
     new CustomEvent<DatastarFetchEvent>(DATASTAR_FETCH_EVENT, {
       detail: { type, el, argsRaw },
@@ -250,7 +257,7 @@ export type FetchArgs = {
   filterSignals?: SignalFilterOptions
   openWhenHidden?: boolean
   payload?: any
-  requestCancellation?: 'auto' | 'disabled' | AbortController
+  requestCancellation?: 'auto' | 'cleanup' | 'disabled' | AbortController
   responseOverrides?: ResponseOverrides
   retry?: 'auto' | 'error' | 'always' | 'never'
   retryInterval?: number
@@ -418,44 +425,53 @@ const newMessage = (): EventSourceMessage => ({
   retry: undefined,
 })
 
-type FetchEventSourceInit = RequestInit & {
-  headers?: Record<string, string>
-  onopen?: (response: Response) => Promise<void>
-  onmessage?: (ev: EventSourceMessage) => void
-  onclose?: () => void
-  onerror?: (err: any) => number | null | undefined | void
-  openWhenHidden?: boolean
-  fetch?: typeof fetch
-  retry?: 'auto' | 'error' | 'always' | 'never'
-  retryInterval?: number
-  retryScaler?: number
-  retryMaxWaitMs?: number
-  retryMaxCount?: number
-  responseOverrides?: ResponseOverrides
-}
+type FetchEventSourceInit =
+  | (RequestInit & {
+      input: RequestInfo
+      headers?: Record<string, string>
+      onopen?: (response: Response) => Promise<void>
+      onmessage?: (ev: EventSourceMessage) => void
+      onclose?: () => void
+      onerror?: (err: any) => number | null | undefined | void
+      openWhenHidden?: boolean
+      fetch?: typeof fetch
+      retry?: 'auto' | 'error' | 'always' | 'never'
+      retryInterval?: number
+      retryScaler?: number
+      retryMaxWaitMs?: number
+      retryMaxCount?: number
+      responseOverrides?: ResponseOverrides
+    })
+  | undefined
 
 const fetchEventSource = (
-  input: RequestInfo,
   el: HTMLOrSVG,
-  {
-    signal: inputSignal,
-    headers: inputHeaders,
-    onopen: inputOnOpen,
-    onmessage,
-    onclose,
-    onerror,
-    openWhenHidden,
-    fetch: inputFetch,
-    retry = 'auto',
-    retryInterval = 1_000,
-    retryScaler = 2,
-    retryMaxWaitMs = 30_000,
-    retryMaxCount = 10,
-    responseOverrides,
-    ...rest
-  }: FetchEventSourceInit,
+  delayedFetchEventSourceInit: () => FetchEventSourceInit,
 ): Promise<void> => {
   return new Promise<void>((resolve, reject) => {
+    const fetchInit = delayedFetchEventSourceInit()
+    if (!fetchInit) {
+      return
+    }
+    let {
+      input,
+      signal: inputSignal,
+      headers: inputHeaders,
+      onopen: inputOnOpen,
+      onmessage,
+      onclose,
+      onerror,
+      openWhenHidden,
+      fetch: inputFetch,
+      retry = 'auto',
+      retryInterval = 1_000,
+      retryScaler = 2,
+      retryMaxWaitMs = 30_000,
+      retryMaxCount = 10,
+      responseOverrides,
+      ...rest
+    }: FetchEventSourceInit = fetchInit
+
     // make a copy of the input headers since we may modify it below:
     const headers: Record<string, string> = {
       ...inputHeaders,
@@ -508,7 +524,7 @@ const fetchEventSource = (
           responseOverrides?: ResponseOverrides,
           ...argNames: string[]
         ) => {
-          const argsRaw: Record<string, string> = {
+          const argsRaw: WatcherArgs = {
             [name]: await response.text(),
           }
           for (const n of argNames) {
@@ -562,7 +578,6 @@ const fetchEventSource = (
             'mode',
             'namespace',
             'useViewTransition',
-            'namespace'
           )
         }
 

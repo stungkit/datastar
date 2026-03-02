@@ -19,9 +19,31 @@ export const pascal = (str: string): string =>
 export const title = (str: string): string =>
   str.replace(/\b\w/g, (char) => char.toUpperCase())
 
-export const jsStrToObject = (raw: string) => {
+const RE_FUNCTION_LITERAL =
+  /^(?:(?:async\s+)?function\b|(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>)/
+
+type JsStrToObjectOptions = {
+  reviveFunctionStrings?: boolean
+}
+
+export const jsStrToObject = (
+  raw: string,
+  options: JsStrToObjectOptions = {},
+) => {
+  const { reviveFunctionStrings = false } = options
   try {
-    return JSON.parse(raw)
+    if (!reviveFunctionStrings) return JSON.parse(raw)
+    return JSON.parse(raw, (_k, value) => {
+      if (typeof value !== 'string') return value
+      const trimmed = value.trim()
+      if (!RE_FUNCTION_LITERAL.test(trimmed)) return value
+      try {
+        const revived = Function(`return (${trimmed})`)()
+        return typeof revived === 'function' ? revived : value
+      } catch {
+        return value
+      }
+    })
   } catch {
     // If JSON parsing fails, try to evaluate as a JavaScript object
     // This is less safe and should be used with caution
@@ -48,3 +70,9 @@ export const modifyCasing = (
 
 export const aliasify = (name: string) =>
   ALIAS ? `data-${ALIAS}-${name}` : `data-${name}`
+
+export const unaliasify = (name: string) => {
+  if (!ALIAS) return name
+  if (!name.startsWith(`${ALIAS}-`)) return null
+  return name.slice(ALIAS.length + 1)
+}
