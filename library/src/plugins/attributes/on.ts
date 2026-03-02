@@ -66,7 +66,7 @@ attribute({
     }
     target.addEventListener(eventName, callback, evtListOpts)
     return () => {
-      target.removeEventListener(eventName, callback)
+      target.removeEventListener(eventName, callback, evtListOpts)
     }
   },
 })
