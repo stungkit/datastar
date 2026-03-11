@@ -201,7 +201,7 @@ const applyPatchMode = (
     }
     const nextNode = consume ? element : (element.cloneNode(true) as Element)
     execute(nextNode as Element)
-    // @ts-expect-error
+    // @ts-expect-error - calling dynamic method path on DOM element
     target[action](nextNode)
     used = true
   }
@@ -562,35 +562,59 @@ const morphNode = (
       return oldNode
     }
 
+    // The following logic for handling inputs, textareas, and options is finnicky.
+    // Only change with extreme caution and lots of testing!
+    // --
     //  many bothans died to bring us this information:
     //  https://github.com/patrick-steele-idem/morphdom/blob/master/src/specialElHandlers.js
     //  https://github.com/choojs/nanomorph/blob/master/lib/morph.js#L113
+    // --
+
+    // Updates an element property, and returns whether it changed
+    const updateElementProp = (
+      oldElt: Element,
+      newElt: Element,
+      name: string,
+    ): boolean => {
+      const newEltHasAttr = newElt.hasAttribute(name)
+      if (oldElt.hasAttribute(name) !== newEltHasAttr) {
+        // @ts-expect-error - setting dynamic property for native DOM properties
+        oldElt[name] = newEltHasAttr
+        return true
+      }
+      return false
+    }
+
+    let shouldDispatchChangeEvent = false
     if (
       oldElt instanceof HTMLInputElement &&
       newElt instanceof HTMLInputElement &&
       newElt.type !== 'file'
     ) {
-      // https://github.com/bigskysoftware/idiomorph/issues/27
-      // | old input value | new input value  | behaviour                              |
-      // | --------------- | ---------------- | -------------------------------------- |
-      // | `null`          | `null`           | preserve old input value               |
-      // | some value      | the same value   | preserve old input value               |
-      // | some value      | `null`           | set old input value to `""`            |
-      // | `null`          | some value       | set old input value to new input value |
-      // | some value      | some other value | set old input value to new input value |
-      if (newElt.getAttribute('value') !== oldElt.getAttribute('value')) {
-        oldElt.value = newElt.getAttribute('value') ?? ''
+      // Modify the value only if the new element’s value attribute is different from the old element’s value attribute
+      const newValue = newElt.getAttribute('value')
+      if (oldElt.getAttribute('value') !== newValue) {
+        oldElt.value = newValue ?? ''
+        shouldDispatchChangeEvent = true
       }
+      // Update checked and disabled properties
+      shouldDispatchChangeEvent = updateElementProp(oldElt, newElt, 'checked') || shouldDispatchChangeEvent
+      updateElementProp(oldElt, newElt, 'disabled')
     } else if (
       oldElt instanceof HTMLTextAreaElement &&
       newElt instanceof HTMLTextAreaElement
     ) {
-      if (newElt.value !== oldElt.value) {
-        oldElt.value = newElt.value
+      // Modify the value only if the new element’s value is different from the old element’s default value.
+      const newValue = newElt.value
+      if (oldElt.defaultValue !== newValue) {
+        oldElt.value = newValue
+        shouldDispatchChangeEvent = true
       }
-      if (oldElt.firstChild && oldElt.firstChild.nodeValue !== newElt.value) {
-        oldElt.firstChild.nodeValue = newElt.value
-      }
+    } else if (
+      oldElt instanceof HTMLOptionElement &&
+      newElt instanceof HTMLOptionElement
+    ) {
+      shouldDispatchChangeEvent = updateElementProp(oldElt, newElt, 'selected') || shouldDispatchChangeEvent
     }
 
     const preserveAttrs = (
@@ -606,11 +630,15 @@ const morphNode = (
       }
     }
 
-    for (let i = oldElt.attributes.length - 1; i >= 0; i--) {
-      const { name } = oldElt.attributes[i]!
+    // Create a static copy, so we can iterate forward safely as we remove attributes
+    for (const { name } of Array.from(oldElt.attributes)) {
       if (!newElt.hasAttribute(name) && !preserveAttrs.includes(name)) {
         oldElt.removeAttribute(name)
       }
+    }
+
+    if (shouldDispatchChangeEvent) {
+      oldElt.dispatchEvent(new Event('change', { bubbles: true }))
     }
 
     // Preserve the scope marker even if the incoming markup doesn't carry it.
