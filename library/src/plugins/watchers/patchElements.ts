@@ -570,14 +570,20 @@ const morphNode = (
     //  https://github.com/choojs/nanomorph/blob/master/lib/morph.js#L113
     // --
 
-    // Updates an element property, and returns whether it changed
+    const preserveAttrs = (
+      (newNode as HTMLElement).getAttribute(aliasedPreserveAttr) ?? ''
+    ).split(' ')
+
     const updateElementProp = (
       oldElt: Element,
       newElt: Element,
       name: string,
     ): boolean => {
       const newEltHasAttr = newElt.hasAttribute(name)
-      if (oldElt.hasAttribute(name) !== newEltHasAttr) {
+      if (
+        oldElt.hasAttribute(name) !== newEltHasAttr &&
+        !preserveAttrs.includes(name)
+      ) {
         // @ts-expect-error - setting dynamic property for native DOM properties
         oldElt[name] = newEltHasAttr
         return true
@@ -593,18 +599,23 @@ const morphNode = (
     ) {
       // Modify the value only if the new element’s value attribute is different from the old element’s value attribute
       const newValue = newElt.getAttribute('value')
-      if (oldElt.getAttribute('value') !== newValue) {
+      if (
+        oldElt.getAttribute('value') !== newValue &&
+        !preserveAttrs.includes('value')
+      ) {
         oldElt.value = newValue ?? ''
         shouldDispatchChangeEvent = true
       }
       // Update checked and disabled properties
-      shouldDispatchChangeEvent = updateElementProp(oldElt, newElt, 'checked') || shouldDispatchChangeEvent
+      shouldDispatchChangeEvent =
+        updateElementProp(oldElt, newElt, 'checked') ||
+        shouldDispatchChangeEvent
       updateElementProp(oldElt, newElt, 'disabled')
     } else if (
       oldElt instanceof HTMLTextAreaElement &&
       newElt instanceof HTMLTextAreaElement
     ) {
-      // Modify the value only if the new element’s value is different from the old element’s default value.
+      // Modify the value only if the new element’s value is different from the old element’s default value
       const newValue = newElt.value
       if (oldElt.defaultValue !== newValue) {
         oldElt.value = newValue
@@ -614,12 +625,10 @@ const morphNode = (
       oldElt instanceof HTMLOptionElement &&
       newElt instanceof HTMLOptionElement
     ) {
-      shouldDispatchChangeEvent = updateElementProp(oldElt, newElt, 'selected') || shouldDispatchChangeEvent
+      shouldDispatchChangeEvent =
+        updateElementProp(oldElt, newElt, 'selected') ||
+        shouldDispatchChangeEvent
     }
-
-    const preserveAttrs = (
-      (newNode as HTMLElement).getAttribute(aliasedPreserveAttr) ?? ''
-    ).split(' ')
 
     for (const { name, value } of newElt.attributes) {
       if (
@@ -638,7 +647,9 @@ const morphNode = (
     }
 
     if (shouldDispatchChangeEvent) {
-      oldElt.dispatchEvent(new Event('change', { bubbles: true }))
+      const dispatchElt =
+        oldElt instanceof HTMLOptionElement ? oldElt.closest('select') : oldElt
+      dispatchElt?.dispatchEvent(new Event('change', { bubbles: true }))
     }
 
     // Preserve the scope marker even if the incoming markup doesn't carry it.
