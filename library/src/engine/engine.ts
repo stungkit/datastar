@@ -1,4 +1,9 @@
-import { DATASTAR_FETCH_EVENT, DSP, DSS } from '@engine/consts'
+import {
+  DATASTAR_FETCH_EVENT,
+  DATASTAR_READY_EVENT,
+  DSP,
+  DSS,
+} from '@engine/consts'
 import { root } from '@engine/signals'
 import type {
   ActionContext,
@@ -55,7 +60,8 @@ const removals = new Map<HTMLOrSVG, Map<string, Map<string, () => void>>>()
 
 const queuedAttributes: AttributePlugin[] = []
 const queuedAttributeNames = new Set<string>()
-const observedRoots = new WeakSet<Node>()
+const observedRoots = new Set<HTMLOrSVG | ShadowRoot>()
+let datastarReadyDispatched = false
 
 export const attribute = <R extends Requirement, B extends boolean>(
   plugin: AttributePlugin<R, B>,
@@ -69,7 +75,12 @@ export const attribute = <R extends Requirement, B extends boolean>(
         attributePlugins.set(attribute.name, attribute)
       }
       queuedAttributes.length = 0
-      applyQueued()
+      const roots = observedRoots.size
+        ? [...observedRoots]
+        : [document.documentElement]
+      for (const root of roots) {
+        applyQueued(root, !observedRoots.has(root))
+      }
       queuedAttributeNames.clear()
     })
   }
@@ -216,6 +227,12 @@ export const parseAttributeKey = (
 export const isDocumentObserverActive = () =>
   observedRoots.has(document.documentElement)
 
+const dispatchDatastarReady = () => {
+  if (datastarReadyDispatched || !isDocumentObserverActive()) return
+  datastarReadyDispatched = true
+  document.dispatchEvent(new Event(DATASTAR_READY_EVENT))
+}
+
 const applyQueued = (
   root: HTMLOrSVG | ShadowRoot = document.documentElement,
   observeRoot = true,
@@ -232,6 +249,7 @@ const applyQueued = (
       attributes: true,
     })
     observedRoots.add(root)
+    dispatchDatastarReady()
   }
 }
 
@@ -251,7 +269,12 @@ export const apply = (
       attributes: true,
     })
     observedRoots.add(root)
+    dispatchDatastarReady()
   }
+}
+
+export const applyElement = (el: HTMLOrSVG, onlyNew = false): void => {
+  applyEls([el], onlyNew)
 }
 
 const applyAttributePlugin = (
@@ -264,7 +287,8 @@ const applyAttributePlugin = (
   if (!rawKey) return
   const { pluginName, key, mods } = parseAttributeKey(rawKey)
   const plugin = attributePlugins.get(pluginName)
-  const shouldApply = (!onlyNew || queuedAttributeNames.has(pluginName)) && !!plugin
+  const shouldApply =
+    (!onlyNew || queuedAttributeNames.has(pluginName)) && !!plugin
   if (shouldApply) {
     const ctx = {
       el,
@@ -298,8 +322,7 @@ const applyAttributePlugin = (
       'allowed'
 
     const keyProvided = key !== undefined && key !== null && key !== ''
-    const valueProvided =
-      value !== undefined && value !== null && value !== ''
+    const valueProvided = value !== undefined && value !== null && value !== ''
 
     if (keyProvided) {
       if (keyReq === 'denied') {
@@ -370,7 +393,7 @@ type GenRxOptions = {
 
 type GenRxFn = <T>(el: HTMLOrSVG, ...args: any[]) => T
 
-const genRx = (
+export const genRx = (
   value: string,
   {
     returnsValue = false,
@@ -441,7 +464,7 @@ const genRx = (
   //   $123            -> $['123']
   //   $foo.0.name     -> $['foo']['0']['name']
 
-  // Skip replacements inside string/template literals. 
+  // Skip replacements inside string/template literals.
   // Template interpolation support rewrites `${...}` only when braces are non-nested.
   expr = expr.replace(
     /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\$]|\$(?!\{))*`)|\$\{([^{}]*)\}|\$([a-zA-Z_\d]\w*(?:[.-]\w+)*)/g,

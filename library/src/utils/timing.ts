@@ -20,7 +20,7 @@ export const throttle = (
   debounce = false,
 ): EventCallbackHandler => {
   let lastArgs: Parameters<EventCallbackHandler> | null = null
-  let timer = 0
+  let timer: ReturnType<typeof setTimeout> | number = 0
 
   return (...args: any[]) => {
     if (leading && !timer) {

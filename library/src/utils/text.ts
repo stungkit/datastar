@@ -2,10 +2,11 @@ import type { Modifiers } from '@engine/types'
 
 export const kebab = (str: string): string =>
   str
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
     .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
     .replace(/([a-z])([0-9]+)/gi, '$1-$2')
     .replace(/([0-9]+)([a-z])/gi, '$1-$2')
-    .replace(/[\s_]+/g, '-') // Replace whitespace and underscores with hyphens
+    .replace(/[\s_]+/g, '-')
     .toLowerCase()
 
 export const camel = (str: string): string =>

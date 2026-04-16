@@ -17,7 +17,6 @@ const abortControllers = new WeakMap<HTMLOrSVG, AbortController>()
 const methodSupportsRequestBody = (method: string): boolean =>
   !['GET', 'DELETE'].includes(method)
 
-
 const createHttpMethod = (
   name: string,
   method: string,
@@ -39,7 +38,7 @@ const createHttpMethod = (
         retry = 'auto',
         retryInterval = 1_000,
         retryScaler = 2,
-        retryMaxWaitMs = 30_000,
+        retryMaxWait = 30_000,
         retryMaxCount = 10,
       }: FetchArgs = {},
     ) => {
@@ -87,7 +86,7 @@ const createHttpMethod = (
           retry,
           retryInterval,
           retryScaler,
-          retryMaxWaitMs,
+          retryMaxWait,
           retryMaxCount,
           signal: controller.signal,
           onopen: async (response: Response) => {
@@ -169,8 +168,12 @@ const createHttpMethod = (
               }
             }
 
-            // Append the value of the form submitter if it is a button with a name
-            if (submitter instanceof HTMLButtonElement) {
+            // Append the value of the form submitter if it is a valid submitter and has a name
+            if (
+              submitter instanceof HTMLButtonElement ||
+              (submitter instanceof HTMLInputElement &&
+                submitter.type === 'submit')
+            ) {
               const name = submitter.getAttribute('name')
               if (name) formData.append(name, submitter.value)
             }
@@ -185,7 +188,7 @@ const createHttpMethod = (
             const formParams = new URLSearchParams(formData as any)
             if (methodSupportsRequestBody(method)) {
               if (multipart) {
-              req.body = formData
+                req.body = formData
               } else {
                 req.body = formParams
               }
@@ -267,7 +270,7 @@ export type FetchArgs = {
   retry?: 'auto' | 'error' | 'always' | 'never'
   retryInterval?: number
   retryScaler?: number
-  retryMaxWaitMs?: number
+  retryMaxWait?: number
   retryMaxCount?: number
 }
 
@@ -443,7 +446,7 @@ type FetchEventSourceInit =
       retry?: 'auto' | 'error' | 'always' | 'never'
       retryInterval?: number
       retryScaler?: number
-      retryMaxWaitMs?: number
+      retryMaxWait?: number
       retryMaxCount?: number
       responseOverrides?: ResponseOverrides
     })
@@ -471,7 +474,7 @@ const fetchEventSource = (
       retry = 'auto',
       retryInterval = 1_000,
       retryScaler = 2,
-      retryMaxWaitMs = 30_000,
+      retryMaxWait = 30_000,
       retryMaxCount = 10,
       responseOverrides,
       ...rest
@@ -663,7 +666,7 @@ const fetchEventSource = (
             retryTimer = setTimeout(create, interval)
             retryInterval = Math.min(
               retryInterval * retryScaler,
-              retryMaxWaitMs,
+              retryMaxWait,
             ) // exponential backoff
             if (++retries >= retryMaxCount) {
               dispatchFetch(RETRIES_FAILED, el, {})

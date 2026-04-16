@@ -3,6 +3,10 @@
 // Description: Patches elements into the DOM.
 
 import { watcher } from '@engine'
+import {
+  DATASTAR_PROP_CHANGE_EVENT,
+  DATASTAR_SCOPE_CHILDREN_EVENT,
+} from '@engine/consts'
 import type { WatcherArgsValue, WatcherContext } from '@engine/types'
 import { isHTMLOrSVG } from '@utils/dom'
 import { aliasify } from '@utils/text'
@@ -235,7 +239,9 @@ const applyToTargets = (
           const scopeHost = target.closest('[data-scope-children]')
           if (scopeHost) {
             scopeHost.dispatchEvent(
-              new CustomEvent('datastar:scope-children', { bubbles: false }),
+              new CustomEvent(DATASTAR_SCOPE_CHILDREN_EVENT, {
+                bubbles: false,
+              }),
             )
           }
           used = true
@@ -262,7 +268,7 @@ ctxPantry.hidden = true
 
 const aliasedIgnoreMorph = aliasify('ignore-morph')
 const aliasedIgnoreMorphAttr = `[${aliasedIgnoreMorph}]`
-const morph = (
+export const morph = (
   oldElt: Element | ShadowRoot,
   newContent: DocumentFragment | Element,
   mode: 'outer' | 'inner' = 'outer',
@@ -535,9 +541,16 @@ const removeNode = (node: Node): void => {
 // Moves an element before another element within the same parent.
 // Uses the proposed `moveBefore` API if available (and working), otherwise falls back to `insertBefore`.
 // This is essentially a forward-compat wrapper.
-const moveBefore: (parentNode: Node, node: Node, after: Node | null) => void =
-  // @ts-expect-error
-  removeNode.call.bind(ctxPantry.moveBefore ?? ctxPantry.insertBefore)
+const moveBefore = (parentNode: Node, node: Node, after: Node | null): void => {
+  if ('moveBefore' in parentNode) {
+    const moveableParent = parentNode as Node & {
+      moveBefore: (node: Node, child: Node | null) => Node
+    }
+    moveableParent.moveBefore(node, after)
+    return
+  }
+  parentNode.insertBefore(node, after)
+}
 
 const aliasedPreserveAttr = aliasify('preserve-attr')
 
@@ -591,7 +604,7 @@ const morphNode = (
       return false
     }
 
-    let shouldDispatchChangeEvent = false
+    let shouldDispatchPropChangeEvent = false
     if (
       oldElt instanceof HTMLInputElement &&
       newElt instanceof HTMLInputElement &&
@@ -604,12 +617,12 @@ const morphNode = (
         !preserveAttrs.includes('value')
       ) {
         oldElt.value = newValue ?? ''
-        shouldDispatchChangeEvent = true
+        shouldDispatchPropChangeEvent = true
       }
       // Update checked and disabled properties
-      shouldDispatchChangeEvent =
+      shouldDispatchPropChangeEvent =
         updateElementProp(oldElt, newElt, 'checked') ||
-        shouldDispatchChangeEvent
+        shouldDispatchPropChangeEvent
       updateElementProp(oldElt, newElt, 'disabled')
     } else if (
       oldElt instanceof HTMLTextAreaElement &&
@@ -619,15 +632,15 @@ const morphNode = (
       const newValue = newElt.value
       if (oldElt.defaultValue !== newValue) {
         oldElt.value = newValue
-        shouldDispatchChangeEvent = true
+        shouldDispatchPropChangeEvent = true
       }
     } else if (
       oldElt instanceof HTMLOptionElement &&
       newElt instanceof HTMLOptionElement
     ) {
-      shouldDispatchChangeEvent =
+      shouldDispatchPropChangeEvent =
         updateElementProp(oldElt, newElt, 'selected') ||
-        shouldDispatchChangeEvent
+        shouldDispatchPropChangeEvent
     }
 
     for (const { name, value } of newElt.attributes) {
@@ -646,10 +659,12 @@ const morphNode = (
       }
     }
 
-    if (shouldDispatchChangeEvent) {
+    if (shouldDispatchPropChangeEvent) {
       const dispatchElt =
         oldElt instanceof HTMLOptionElement ? oldElt.closest('select') : oldElt
-      dispatchElt?.dispatchEvent(new Event('change', { bubbles: true }))
+      dispatchElt?.dispatchEvent(
+        new Event(DATASTAR_PROP_CHANGE_EVENT, { bubbles: true }),
+      )
     }
 
     // Preserve the scope marker even if the incoming markup doesn't carry it.
@@ -668,7 +683,7 @@ const morphNode = (
 
     if (shouldScopeChildren) {
       oldElt.dispatchEvent(
-        new CustomEvent('datastar:scope-children', { bubbles: false }),
+        new CustomEvent(DATASTAR_SCOPE_CHILDREN_EVENT, { bubbles: false }),
       )
     }
   }

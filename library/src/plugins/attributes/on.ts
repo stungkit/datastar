@@ -18,23 +18,19 @@ attribute({
   argNames: ['evt'],
   apply({ el, key, mods, rx }) {
     let target: Element | Window | Document = el
-    if (mods.has('window')) target = window
-    if (mods.has('document')) target = document
+    if (mods.has('window')) {
+      target = window
+    } else if (mods.has('document')) {
+      target = document
+    }
     let callback = (evt?: Event) => {
-      if (evt) {
-        if (mods.has('prevent')) {
-          evt.preventDefault()
-        }
-        if (mods.has('stop')) {
-          evt.stopPropagation()
-        }
-      }
       beginBatch()
       rx(evt)
       endBatch()
     }
     callback = modifyViewTransition(callback, mods)
     callback = modifyTiming(callback, mods)
+    const eventName = modifyCasing(key, mods, 'kebab')
     const evtListOpts: AddEventListenerOptions = {
       capture: mods.has('capture'),
       passive: mods.has('passive'),
@@ -49,7 +45,6 @@ attribute({
         }
       }
     }
-    const eventName = modifyCasing(key, mods, 'kebab')
     // Listen for Datastar events on the document
     if (
       eventName === DATASTAR_FETCH_EVENT ||
@@ -57,17 +52,19 @@ attribute({
     ) {
       target = document
     }
-    // Prevent default on form submit events
-    if (el instanceof HTMLFormElement && eventName === 'submit') {
-      const cb = callback
-      callback = (evt?: Event) => {
-        evt?.preventDefault()
-        cb(evt)
+    // Apply event-side effects before timing/view-transition wrappers run.
+    const listener = (evt?: Event) => {
+      if (evt) {
+        if (mods.has('prevent')) evt.preventDefault()
+        if (mods.has('stop')) evt.stopPropagation()
+        // Keep data-on:submit from falling through to native form submission.
+        if (el instanceof HTMLFormElement && eventName === 'submit') evt.preventDefault()
       }
+      callback(evt)
     }
-    target.addEventListener(eventName, callback, evtListOpts)
+    target.addEventListener(eventName, listener, evtListOpts)
     return () => {
-      target.removeEventListener(eventName, callback, evtListOpts)
+      target.removeEventListener(eventName, listener, evtListOpts)
     }
   },
 })
