@@ -11,10 +11,10 @@
 
 Datastar is a lightweight framework for building everything from simple sites to real-time collaborative web applications.
 
-Getting started is as easy as adding a single 11.84 KiB script tag to your HTML.
+Getting started is as easy as adding a single 11.82 KiB script tag to your HTML.
 
 ```html
-<script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@1.0.0/bundles/datastar.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.0/bundles/datastar.js"></script>
 ```
 
 Then start adding frontend reactivity using declarative <code>data-*</code> attributes.
