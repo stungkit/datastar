@@ -1,4 +1,15 @@
 {
+  "data-animate:*": {
+    "prefix": "data-animate:*",
+    "body": "data-animate:${1:name}=\"${2:expression}\"",
+    "description": "Animates element attributes over time.",
+    "references": [
+      {
+        "name": "Documentation",
+        "url": "https://data-star.dev/reference/attributes#data-animate"
+      }
+    ]
+  },
   "data-attr": {
     "prefix": "data-attr",
     "body": "data-attr=\"{${1:attributeName}: ${2:expression}}\"",
@@ -172,6 +183,17 @@
       {
         "name": "Documentation",
         "url": "https://data-star.dev/reference/attributes#data-json-signals"
+      }
+    ]
+  },
+  "data-match-media:*": {
+    "prefix": "data-match-media:*",
+    "body": "data-match-media:${1:name}=\"${2:expression}\"",
+    "description": "Sets a signal to whether a media query matches and keeps it in sync whenever the query changes.",
+    "references": [
+      {
+        "name": "Documentation",
+        "url": "https://data-star.dev/reference/attributes#data-match-media"
       }
     ]
   },
