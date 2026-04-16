@@ -7,10 +7,28 @@
   "default-icon": "icon.png",
   "contributions": {
     "js": {
+      "datastar-animate-modifiers": [
+        {
+          "name": "delay",
+          "description": "Delay the event listener"
+        },
+        {
+          "name": "duration",
+          "description": "The interval duration"
+        }
+      ],
       "datastar-bind-modifiers": [
         {
           "name": "case",
           "description": "Modify the casing of the signal name"
+        },
+        {
+          "name": "prop",
+          "description": "Binds to a specific property instead of the inferred native/default binding."
+        },
+        {
+          "name": "event",
+          "description": "Defines which events sync the element back to the signal."
         }
       ],
       "datastar-class-modifiers": [
@@ -55,6 +73,12 @@
         {
           "name": "terse",
           "description": "Outputs a more compact JSON format"
+        }
+      ],
+      "datastar-match-media-modifiers": [
+        {
+          "name": "case",
+          "description": "Modify the casing of the signal name"
         }
       ],
       "datastar-on-modifiers": [
@@ -286,6 +310,36 @@
     },
     "html": {
       "attributes": [
+        {
+          "name": "data-animate:*",
+          "virtual": true,
+          "description": "Animates element attributes over time.",
+          "doc-url": "https://data-star.dev/reference/attributes#data-animate",
+          "value": {
+            "kind": "expression",
+            "type": "string",
+            "required": true
+          },
+          "pattern": {
+            "template": [
+              "data-animate:",
+              {
+                "regex": "[-a-z0-9]+"
+              },
+              {
+                "items": "/js/datastar-animate-modifiers",
+                "template": [
+                  "__",
+                  "$...",
+                  "#item:modifier"
+                ],
+                "required": false,
+                "repeat": true
+              }
+            ],
+            "priority": "normal"
+          }
+        },
         {
           "name": "data-attr:*",
           "virtual": true,
@@ -619,6 +673,36 @@
               "data-json-signals",
               {
                 "items": "/js/datastar-json-signals-modifiers",
+                "template": [
+                  "__",
+                  "$...",
+                  "#item:modifier"
+                ],
+                "required": false,
+                "repeat": true
+              }
+            ],
+            "priority": "normal"
+          }
+        },
+        {
+          "name": "data-match-media:*",
+          "virtual": true,
+          "description": "Sets a signal to whether a media query matches and keeps it in sync whenever the query changes.",
+          "doc-url": "https://data-star.dev/reference/attributes#data-match-media",
+          "value": {
+            "kind": "expression",
+            "type": "string",
+            "required": true
+          },
+          "pattern": {
+            "template": [
+              "data-match-media:",
+              {
+                "regex": "[-a-z0-9]+"
+              },
+              {
+                "items": "/js/datastar-match-media-modifiers",
                 "template": [
                   "__",
                   "$...",

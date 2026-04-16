@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-16
+
+- Added the `data-animate` attribute.
+- Added the `data-match-media` attribute.
+- Added the `prop` and `event` modifiers to `data-bind`.
+
 ## [1.2.3] - 2025-11-08
 
 - Made it so that the `data-bind` attribute appears on all elements, rather than only a few select ones (`input`, `select`, etc.).
@@ -76,7 +82,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.2.3...HEAD
+[Unreleased]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/starfederation/datastar/tools/intellij-plugin/compare/v1.2.0...v1.2.1
