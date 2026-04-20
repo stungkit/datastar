@@ -7,7 +7,7 @@ import { DATASTAR_PROP_CHANGE_EVENT } from '@engine/consts'
 import { effect, getPath, mergePaths } from '@engine/signals'
 import type { Paths } from '@engine/types'
 import { hasOwn } from '@utils/polyfills'
-import { aliasify, modifyCasing } from '@utils/text'
+import { aliasify, camel, modifyCasing } from '@utils/text'
 
 type SignalFile = {
   name: string
@@ -128,48 +128,6 @@ attribute({
     const props = mods.get('prop')
     const events = mods.get('event')
     let adapter: BindAdapter | null = null
-    if (props) {
-      const prop = [...props][0]
-      if (!prop?.length) {
-        throw error('BindPropNameMissing')
-      }
-      if (!events?.size) {
-        throw error('BindEventRequired')
-      }
-      adapter = propAdapter(prop, ...events)
-    } else if (events) {
-      throw error('BindPropRequiredWhenEventProvided')
-    }
-
-    if (adapter) {
-      const initialValue = getPath(signalName)
-      const path = boundPath(el, key, value, signalName, adapter, initialValue)
-      const syncSignal = () => {
-        const signalValue = getPath(path)
-        if (signalValue != null) {
-          const value = adapter?.get(el, typeof signalValue)
-          if (value !== empty) {
-            mergePaths([[path, value]])
-          }
-        }
-      }
-
-      for (const eventName of adapter?.events ?? []) {
-        el.addEventListener(eventName, syncSignal)
-      }
-      el.addEventListener(DATASTAR_PROP_CHANGE_EVENT, syncSignal)
-      const cleanup = effect(() => {
-        adapter?.set(el, getPath(path))
-      })
-
-      return () => {
-        cleanup()
-        for (const eventName of adapter?.events ?? []) {
-          el.removeEventListener(eventName, syncSignal)
-        }
-        el.removeEventListener(DATASTAR_PROP_CHANGE_EVENT, syncSignal)
-      }
-    }
 
     if (el instanceof HTMLInputElement) {
       switch (el.type) {
@@ -284,7 +242,7 @@ attribute({
         events: ['change'],
       }
     } else if (el instanceof HTMLSelectElement) {
-      adapter = valueAdapter(false, 'change')
+      adapter = valueAdapter(true, 'change')
     } else if (el instanceof HTMLTextAreaElement) {
       adapter = propAdapter('value', 'input')
     } else if (el instanceof HTMLElement && el.tagName.includes('-')) {
@@ -299,6 +257,15 @@ attribute({
     }
     if (!adapter) {
       throw error('InvalidBindAdapter')
+    }
+
+    const firstProp = props && [...props][0]
+    if (props && !firstProp) throw error('BindPropNameMissing')
+    if (firstProp) {
+      const prop = camel(firstProp)
+      adapter = propAdapter(prop, ...(events ? [...events] : adapter.events))
+    } else if (events) {
+      adapter.events = [...events]
     }
 
     const initialValue = getPath(signalName)
