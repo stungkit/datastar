@@ -94,8 +94,9 @@ const createHttpMethod = (
           retryMaxCount,
           signal: controller.signal,
           onopen: async (response: Response) => {
-            if (response.status >= 400)
+            if (response.status >= 400) {
               dispatchFetch(ERROR, el, { status: response.status.toString() })
+            }
           },
           onmessage: (evt) => {
             if (!evt.event.startsWith('datastar')) return
@@ -119,11 +120,6 @@ const createHttpMethod = (
             if (isWrongContent(error)) {
               // don't retry if the content-type is wrong
               throw error('FetchExpectedTextEventStream', { url })
-            }
-            // do nothing and it will retry
-            if (error) {
-              console.error(error.message)
-              dispatchFetch(RETRYING, el, { message: error.message })
             }
           },
         }
@@ -444,7 +440,7 @@ type FetchEventSourceInit =
       onopen?: (response: Response) => Promise<void>
       onmessage?: (ev: EventSourceMessage) => void
       onclose?: () => void
-      onerror?: (err: any) => number | null | undefined | void
+      onerror?: (error: any) => void
       openWhenHidden?: boolean
       fetch?: typeof fetch
       retry?: 'auto' | 'error' | 'always' | 'never'
@@ -472,7 +468,6 @@ const fetchEventSource = (
       onopen: inputOnOpen,
       onmessage,
       onclose,
-      onerror,
       openWhenHidden,
       fetch: inputFetch,
       retry = 'auto',
@@ -524,6 +519,22 @@ const fetchEventSource = (
 
     let retries = 0
     let baseRetryInterval = retryInterval
+
+    const retryRequest = () => {
+      if (retries < retryMaxCount) {
+        dispatchFetch(RETRYING, el, {})
+        clearTimeout(retryTimer)
+        retryTimer = setTimeout(create, retryInterval)
+        retries++
+        // Prepare the interval for the next retry (exponential backoff)
+        retryInterval = Math.min(retryInterval * retryScaler, retryMaxWait)
+      } else {
+        dispatchFetch(RETRIES_FAILED, el, {})
+        dispose()
+        reject('Max retries reached.')
+      }
+    }
+
     const create = async () => {
       curRequestController = new AbortController()
       const curRequestSignal = curRequestController.signal
@@ -573,8 +584,7 @@ const fetchEventSource = (
             !isRedirectStatus &&
             (retry === 'always' || (retry === 'error' && isErrorStatus))
           ) {
-            clearTimeout(retryTimer)
-            retryTimer = setTimeout(create, retryInterval)
+            retryRequest()
             return
           }
           dispose()
@@ -653,37 +663,17 @@ const fetchEventSource = (
         onclose?.()
 
         if (retry === 'always' && !isRedirectStatus) {
-          clearTimeout(retryTimer)
-          retryTimer = setTimeout(create, retryInterval)
+          retryRequest()
           return
         }
 
         dispose()
         resolve()
-      } catch (err) {
+      } catch {
         if (!curRequestSignal.aborted) {
-          // if we haven’t aborted the request ourselves:
           try {
-            // check if we need to retry:
-            const interval: any = onerror?.(err) || retryInterval
-            clearTimeout(retryTimer)
-            retryTimer = setTimeout(create, interval)
-            retryInterval = Math.min(
-              retryInterval * retryScaler,
-              retryMaxWait,
-            ) // exponential backoff
-            if (++retries >= retryMaxCount) {
-              dispatchFetch(RETRIES_FAILED, el, {})
-              // we should not retry anymore:
-              dispose()
-              reject('Max retries reached.') // Max retries reached, check your server or network connection
-            } else {
-              console.error(
-                `Datastar failed to reach ${input.toString()} retrying in ${interval}ms.`,
-              )
-            }
+            retryRequest()
           } catch (innerErr) {
-            // we should not retry anymore:
             dispose()
             reject(innerErr)
           }
