@@ -236,7 +236,7 @@ String enum defining how elements are patched into the DOM.
 | `selector` | string | Element ID | CSS selector for target element. If a selector is not specified, each element must have an ID specified. |
 | `mode` | ElementPatchMode | `outer` | How to patch the element |
 | `useViewTransition` | boolean | `false` | Enable view transitions API |
-| `viewTransitionSelector` | string | `` | CSS selector for view transitions API |
+| `viewTransitionSelector` | string | Empty string | CSS selector for view transitions API |
 | `namespace` | `html` \| `svg` \| `mathml` | `html` | Namespace in which to create new elements |
 
 ### Implementation
