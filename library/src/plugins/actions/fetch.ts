@@ -13,7 +13,7 @@ import type {
 } from '@engine/types'
 import { kebab } from '@utils/text'
 
-// Map of abort controllers keyed by method and path
+// Map of abort controllers keyed by method and URL
 const abortControllers = new Map<string, Map<string, AbortController>>()
 const methodSupportsRequestBody = (method: string): boolean =>
   !['GET', 'DELETE'].includes(method)
@@ -116,8 +116,8 @@ const createHttpMethod = (
 
             dispatchFetch(type, el, argsRaw)
           },
-          onerror: (error) => {
-            if (isWrongContent(error)) {
+          onerror: (err) => {
+            if (isWrongContent(err)) {
               // don't retry if the content-type is wrong
               throw error('FetchExpectedTextEventStream', { url })
             }
@@ -209,9 +209,9 @@ const createHttpMethod = (
 
         try {
           await fetchEventSource(el, buildFetchEventSourceInit)
-        } catch (e: any) {
-          if (!isWrongContent(e)) {
-            throw error('FetchFailed', { method, url, error: e.message })
+        } catch (err: any) {
+          if (!isWrongContent(err)) {
+            throw error('FetchFailed', { method, url, error: err.message })
           }
           // exit gracefully and do nothing if the content-type is wrong
           // this can happen if the client is sending a request
@@ -440,7 +440,7 @@ type FetchEventSourceInit =
       onopen?: (response: Response) => Promise<void>
       onmessage?: (ev: EventSourceMessage) => void
       onclose?: () => void
-      onerror?: (error: any) => void
+      onerror?: (err: any) => void
       openWhenHidden?: boolean
       fetch?: typeof fetch
       retry?: 'auto' | 'error' | 'always' | 'never'

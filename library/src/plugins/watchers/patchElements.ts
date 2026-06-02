@@ -217,7 +217,7 @@ const applyPatchMode = (
     if (consume && used) {
       break
     }
-    const nextNode = getNextNode(element, consume, used)
+    const nextNode = consume ? element : (element.cloneNode(true) as Element)
     execute(nextNode as Element)
     // @ts-expect-error - calling dynamic method path on DOM element
     target[action](nextNode)
@@ -269,15 +269,6 @@ const applyToTargets = (
     case 'after':
       applyPatchMode(targets, element, mode, consume)
   }
-}
-
-// Returns a clone of the element if it should be consumed or has not yet been used, otherwise returns the element itself for reuse. See https://github.com/starfederation/datastar/issues/1155
-const getNextNode = (
-  element: DocumentFragment | Element,
-  consume: boolean,
-  used: boolean,
-): DocumentFragment | Element => {
-  return consume || !used ? element : (element.cloneNode(true) as Element)
 }
 
 const ctxIdMap = new Map<Node, Set<string>>()
