@@ -21,7 +21,7 @@ export type WatcherFn<K extends keyof CustomEventMap> = (
   ev: CustomEventMap[K],
 ) => void
 
-export type ErrorFn = (name: string, ctx?: Record<string, any>) => void
+export type ErrorFn = (name: string, ctx?: Record<string, any>) => Error
 
 export type ActionContext = {
   el: HTMLOrSVG

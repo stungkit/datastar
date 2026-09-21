@@ -1,8 +1,10 @@
 import { DOCUMENT } from '@engine/consts'
+import { createError } from '@engine/errors'
+import { aliasify } from '@utils/text'
 
 type ExpressionFn = (...args: any[]) => any
 
-const nonceAttribute = 'data-nonce'
+const nonceAttribute = aliasify('nonce')
 const root = DOCUMENT.documentElement
 const pageNonce = root.getAttribute(nonceAttribute)
 
@@ -11,7 +13,7 @@ const cspEnabled = pageNonce !== null
 let policy: any
 if (cspEnabled) {
   if (!pageNonce) {
-    throw new Error('Datastar CSP requires a nonempty html data-nonce.')
+    throw createError({}, 'NonceRequired')
   }
   root.removeAttribute(nonceAttribute)
   policy = (window as any).trustedTypes?.createPolicy('datastar', {
@@ -50,7 +52,7 @@ export const compileExpression = (
 
   const compiled = (script as any).x as ExpressionFn | undefined
   if (!compiled) {
-    throw new Error('CSP blocked Datastar expression compilation.')
+    throw new Error('Blocked by CSP.')
   }
   compiledExpressions.set(source, compiled)
   return compiled

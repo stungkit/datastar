@@ -63,8 +63,8 @@ watcher({
 
     const patchElementsArgs: PatchElementsArgs = {
       selector_: selector,
-      mode_: mode,
-      namespace_: namespace,
+      mode_: mode as PatchElementsMode,
+      namespace_: namespace as Namespace,
       elements_: elements,
     }
 

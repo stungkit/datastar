@@ -22,6 +22,7 @@
             "@engine/*": ["./src/engine/*"],
             "@plugins/*": ["./src/plugins/*"],
             "@pro/*": ["./src/pro/*"],
+            "@rocket": ["./src/rocket/index.ts"],
             "@utils/*": ["./src/utils/*"]
         }
     },

@@ -53,19 +53,22 @@ const createHttpMethod = (
           ? requestCancellation
           : new AbortController()
       const cleanupName = `@${name}`
-      if (requestCancellation === 'auto' || requestCancellation === 'cleanup') {
+      const cancelOnDisconnect = requestCancellation === 'cleanup'
+      let requestCleanup: (() => void) | undefined
+      if (requestCancellation === 'auto' || cancelOnDisconnect) {
         const controllers = abortControllers.get(method) ?? new Map()
         controllers.get(url)?.abort()
         controllers.set(url, controller)
         abortControllers.set(method, controllers)
       }
-      if (requestCancellation === 'cleanup') {
+      if (cancelOnDisconnect) {
         cleanups.get(cleanupName)?.()
-        cleanups.set(cleanupName, async () => {
+        requestCleanup = async () => {
           controller.abort()
           // wait one tick for FINISHED to fire
           await Promise.resolve()
-        })
+        }
+        cleanups.set(cleanupName, requestCleanup)
       }
 
       let cleanupFn = () => {}
@@ -119,7 +122,9 @@ const createHttpMethod = (
               Object.entries(argsRawLines).map(([k, v]) => [k, v.join('\n')]),
             )
 
-            dispatchFetch(type, el, argsRaw)
+            if (!cancelOnDisconnect || el.isConnected) {
+              dispatchFetch(type, el, argsRaw)
+            }
           },
           onerror: (err) => {
             if (isWrongContent(err)) {
@@ -209,7 +214,11 @@ const createHttpMethod = (
         dispatchFetch(STARTED, el, {})
 
         try {
-          await fetchEventSource(el, buildFetchEventSourceInit)
+          await fetchEventSource(
+            el,
+            buildFetchEventSourceInit,
+            cancelOnDisconnect,
+          )
         } catch (err: any) {
           if (!isWrongContent(err)) {
             throw error('FetchFailed', { method, url, error: err.message })
@@ -222,7 +231,9 @@ const createHttpMethod = (
       } finally {
         dispatchFetch(FINISHED, el, {})
         cleanupFn()
-        cleanups.delete(cleanupName)
+        if (cleanups.get(cleanupName) === requestCleanup) {
+          cleanups.delete(cleanupName)
+        }
       }
     },
   })
@@ -231,6 +242,7 @@ createHttpMethod('get', 'GET', false)
 createHttpMethod('patch', 'PATCH')
 createHttpMethod('post', 'POST')
 createHttpMethod('put', 'PUT')
+createHttpMethod('query', 'QUERY')
 createHttpMethod('delete', 'DELETE')
 
 export const STARTED = 'started'
@@ -452,6 +464,7 @@ type FetchEventSourceInit =
 const fetchEventSource = (
   el: HTMLOrSVG,
   buildFetchEventSourceInit: () => FetchEventSourceInit,
+  cancelOnDisconnect: boolean,
 ): Promise<void> => {
   return new Promise<void>((resolve, reject) => {
     const fetchInit = buildFetchEventSourceInit()
@@ -564,8 +577,9 @@ const fetchEventSource = (
             }
             if (v) argsRaw[n] = v
           }
-
-          dispatchFetch(dispatchType, el, argsRaw)
+          if (!cancelOnDisconnect || el.isConnected) {
+            dispatchFetch(dispatchType, el, argsRaw)
+          }
           dispose()
           resolve()
         }

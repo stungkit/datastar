@@ -8,8 +8,7 @@ export const lerp = (
   t: number,
   clamped = true,
 ): number => {
-  const v = min + (max - min) * t
-  return clamped ? clamp(v, min, max) : v
+  return min + (max - min) * (clamped ? clamp(t, 0, 1) : t)
 }
 
 export const inverseLerp = (
@@ -18,10 +17,8 @@ export const inverseLerp = (
   value: number,
   clamped = true,
 ): number => {
-  if (value < min) return 0
-  if (value > max) return 1
   const v = (value - min) / (max - min)
-  return clamped ? clamp(v, min, max) : v
+  return clamped ? clamp(v, 0, 1) : v
 }
 
 export const fit = (

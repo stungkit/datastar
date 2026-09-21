@@ -5,6 +5,7 @@ import {
   MutationObserverClass,
 } from '@engine/consts'
 import { compileExpression } from '@engine/csp'
+import { createError } from '@engine/errors'
 import { root } from '@engine/signals'
 import type {
   ActionContext,
@@ -18,25 +19,7 @@ import type {
   WatcherPlugin,
 } from '@engine/types'
 import { isHTMLOrSVG } from '@utils/dom'
-import { aliasify, snake, unaliasify } from '@utils/text'
-
-const url = 'https://data-star.dev/errors'
-
-const error = (
-  ctx: Record<string, any>,
-  reason: string,
-  metadata: Record<string, any> = {},
-) => {
-  Object.assign(metadata, ctx)
-  const e = new Error()
-  const r = snake(reason)
-  const q = new URLSearchParams({
-    metadata: JSON.stringify(metadata),
-  }).toString()
-  const c = JSON.stringify(metadata, null, 2)
-  e.message = `${reason}\nMore info: ${url}/${r}?${q}\nContext: ${c}`
-  return e
-}
+import { aliasify, unaliasify } from '@utils/text'
 
 const actionPlugins: Map<string, ActionPlugin> = new Map()
 const attributePlugins: Map<string, AttributePlugin> = new Map()
@@ -98,7 +81,7 @@ DOCUMENT.addEventListener(DATASTAR_FETCH_EVENT, ((
   if (plugin) {
     plugin.apply(
       {
-        error: error.bind(0, {
+        error: createError.bind(0, {
           plugin: { type: 'watcher', name: plugin.name },
           element: {
             id: (evt.target as Element).id,
@@ -295,7 +278,7 @@ const applyAttributePlugin = (
       el,
       rawKey,
       mods,
-      error: error.bind(0, {
+      error: createError.bind(0, {
         plugin: { type: 'attribute', name: plugin.name },
         element: { id: el.id, tag: el.tagName },
         expression: { rawKey, key, value },
@@ -444,7 +427,7 @@ export const genRx = (
     expr = value.trim()
   }
 
-  // Replace signal references with bracket notation
+  // Replace signal references with bracket notation and action calls with the internal action dispatcher.
   // Examples:
   //   $count          -> $['count']
   //   $count--        -> $['count']--
@@ -458,29 +441,26 @@ export const genRx = (
   //   $foo['bar.baz'] -> $['foo']['bar.baz']
   //   $123            -> $['123']
   //   $foo.0.name     -> $['foo']['0']['name']
+  //   @get('/foo')    -> __action("get",evt,'/foo')
 
   // Skip replacements inside string/template literals.
   // Template interpolation support rewrites `${...}` only when braces are non-nested.
   expr = expr.replace(
-    /(?:"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|`[^`\\$]*(?:(?:\\.|\$(?!\{))[^`\\$]*)*`)|\$\{([^{}]*)\}|\$(\w+(?:[.-]\w+)*)/g,
-    (match, interpolationExpr, signalName) => {
-      // If `interpolationExpr` and `signalName` are both undefined, it means we matched a quoted string literal.
-      if (interpolationExpr === undefined && signalName === undefined) {
-        return match
-      }
-
+    /(?:"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|`[^`\\$]*(?:(?:\\.|\$(?!\{))[^`\\$]*)*`)|\$\{([^{}]*)\}|\$(\w+(?:[.-]\w+)*)|@([A-Za-z_$][\w$]*)\(/g,
+    (match, interpolationExpr, signalName, actionName) => {
       if (interpolationExpr !== undefined) {
-        return `\${${interpolationExpr.replace(
-          /\$(\w+(?:[.-]\w+)*)/g,
-          (_: string, innerSignalName: string) => signalPath(innerSignalName),
-        )}}`
+        return `\${${interpolationExpr
+          .replace(
+            /\$(\w+(?:[.-]\w+)*)/g,
+            (_: string, name: string) => signalPath(name),
+          )
+          .replace(/@([A-Za-z_$][\w$]*)\(/g, '__action("$1",evt,')}}`
       }
-
-      return signalPath(signalName!)
+      if (signalName) return signalPath(signalName)
+      if (actionName) return `__action("${actionName}",evt,`
+      return match
     },
   )
-
-  expr = expr.replaceAll(/@([A-Za-z_$][\w$]*)\(/g, '__action("$1",evt,')
 
   try {
     const fn = compileExpression(
@@ -489,7 +469,7 @@ export const genRx = (
     )
     return (el: HTMLOrSVG, ...args: any[]) => {
       const action = (name: string, evt: Event | undefined, ...args: any[]) => {
-        const err = error.bind(0, {
+        const err = createError.bind(0, {
           plugin: { type: 'action', name },
           element: { id: el.id, tag: el.tagName },
           expression: {
@@ -515,7 +495,7 @@ export const genRx = (
         return fn(el, root, action, undefined, ...args)
       } catch (e: any) {
         console.error(e)
-        throw error(
+        throw createError(
           {
             element: { id: el.id, tag: el.tagName },
             expression: {
@@ -530,7 +510,7 @@ export const genRx = (
     }
   } catch (e: any) {
     console.error(e)
-    throw error(
+    throw createError(
       {
         expression: {
           fnContent: expr,

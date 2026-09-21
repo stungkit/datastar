@@ -39,3 +39,14 @@ import '@plugins/attributes/style'
 import '@plugins/attributes/text'
 import '@plugins/watchers/patchElements'
 import '@plugins/watchers/patchSignals'
+
+// Keep Rocket last in the bundle. Its runtime queues custom-element definitions until Datastar is ready, but the bundle should still expose and evaluate Rocket only after the Datastar engine/plugins have been loaded.
+export {
+  type Codec,
+  type CodecDocs,
+  type CodecRegistry,
+  createCodec,
+  publishRocketManifests,
+  type RocketDefinition,
+  rocket,
+} from '@rocket'

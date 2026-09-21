@@ -1,3 +1,5 @@
+/// <reference path="../globals.d.ts" />
+
 export { action, actions, attribute, watcher } from '@engine'
 export {
   beginBatch,

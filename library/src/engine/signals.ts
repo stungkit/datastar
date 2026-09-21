@@ -603,13 +603,12 @@ const deep = (value: any, prefix = ''): any => {
         const path = prefix + prop
         // special case for when setting length so we can make a diff patch
         if (isArr && prop === 'length') {
-          const diff = (deepObj[prop] as unknown as number) - newValue
+          const oldLength = deepObj[prop] as unknown as number
           deepObj[prop] = newValue
-          // manually make a diff patch for now, shouldnt have to do this when object diffing is
-          // implemented. see https://github.com/starfederation/datastar-dev/issues/274
-          if (diff > 0) {
+          // Setting an array’s length bypasses the `deleteProperty` trap, so manually patch removed indexes.
+          if (oldLength > newValue) {
             const patch: Record<string, any> = {}
-            for (let i = newValue; i < deepObj[prop]; i++) {
+            for (let i = newValue; i < oldLength; i++) {
               patch[i] = null
             }
             dispatch(prefix.slice(0, -1), patch)
@@ -618,6 +617,8 @@ const deep = (value: any, prefix = ''): any => {
         } else if (hasOwn(deepObj, prop)) {
           if (newValue == null) {
             delete deepObj[prop]
+            dispatch(path, null)
+            keys(keys() + 1)
             // if newValue is a computed set the computed directly instead of wrapping in signal
           } else if (hasOwn(newValue, computedSymbol)) {
             deepObj[prop] = newValue
@@ -763,20 +764,19 @@ export const filtered = (
   const includeRe = toRegExp(include)
   const excludeRe = toRegExp(exclude)
   const paths: Paths = []
-  const stack: [any, string][] = [[obj, '']]
 
-  while (stack.length) {
-    const [node, prefix] = stack.pop()!
-
+  const walk = (node: JSONPatch, prefix = '') => {
     for (const key in node) {
       const path = prefix + key
       if (isPojo(node[key])) {
-        stack.push([node[key], `${path}.`])
+        walk(node[key], `${path}.`)
       } else if (includeRe.test(path) && !excludeRe.test(path)) {
         paths.push([path, getPath(path)])
       }
     }
   }
+
+  walk(obj)
 
   return pathToObj(paths)
 }
